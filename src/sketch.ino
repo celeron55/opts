@@ -7,6 +7,8 @@ const int PIN_LCD_DO = 10;
 
 void init_io()
 {
+	Serial.begin(9600);
+
 	pinMode(PIN_LED, OUTPUT);
 
 	pinMode(PIN_MAIN_POWER_CONTROL, OUTPUT);
@@ -106,7 +108,7 @@ uint8_t lcd_receive_byte()
 	return b;
 }
 
-// data: 4 bytes
+// data: 4 bytes (NOTE: 30 keys + SA="sleep acknowledge data")
 // returns: true: read, false: not read
 bool lcd_receive_frame(uint8_t *data)
 {
@@ -146,11 +148,18 @@ void setup()
 void loop()
 {
 	if(lcd_can_receive_frame()){
+		digitalWrite(PIN_LED, HIGH);
+
 		uint8_t data[4];
 		lcd_receive_frame(data);
 
-		digitalWrite(PIN_LED, HIGH);
-		_delay_ms(50);
+		for(uint8_t i=0; i<30; i++){
+			if(data[i/8] & (1<<(i&7))){
+				Serial.print(F("<KEY:"));
+				Serial.println(i);
+			}
+		}
+
 		digitalWrite(PIN_LED, LOW);
 	}
 
