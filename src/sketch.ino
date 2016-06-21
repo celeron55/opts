@@ -1,3 +1,4 @@
+const int PIN_LED = 13;
 const int PIN_MAIN_POWER_CONTROL = 4;
 const int PIN_LCD_CE = 7;
 const int PIN_LCD_CL = 8;
@@ -6,6 +7,8 @@ const int PIN_LCD_DO = 10;
 
 void init_io()
 {
+	pinMode(PIN_LED, OUTPUT);
+
 	pinMode(PIN_MAIN_POWER_CONTROL, OUTPUT);
 	pinMode(PIN_LCD_CE, OUTPUT);
 	pinMode(PIN_LCD_CL, OUTPUT);
@@ -26,22 +29,6 @@ void lcd_send_byte(uint8_t b)
 		digitalWrite(PIN_LCD_CL, HIGH);
 		_delay_us(3);
 	}
-}
-
-// data: 7 bytes
-void lcd_send_frame(uint8_t *data)
-{
-	lcd_send_byte(0x42);
-
-	digitalWrite(PIN_LCD_CE, HIGH);
-
-	_delay_us(3);
-
-	for(uint8_t i=0; i<7; i++){
-		lcd_send_byte(data[i]);
-	}
-
-	digitalWrite(PIN_LCD_CE, LOW);
 }
 
 // data: 21 bytes:
@@ -104,15 +91,69 @@ void lcd_send_display(uint8_t control, uint8_t *data)
 	_delay_us(10);
 }
 
+// Bits are received LSB first
+uint8_t lcd_receive_byte()
+{
+	uint8_t b = 0;
+	for(uint8_t i=0; i<8; i++){
+		digitalWrite(PIN_LCD_CL, LOW);
+		_delay_us(3);
+		digitalWrite(PIN_LCD_CL, HIGH);
+		if(digitalRead(PIN_LCD_DO))
+			b |= (1<<i);
+		_delay_us(3);
+	}
+	return b;
+}
+
+// data: 4 bytes
+// returns: true: read, false: not read
+bool lcd_receive_frame(uint8_t *data)
+{
+	// If DO is not low, reading is forbidden
+	if(digitalRead(PIN_LCD_DO) == HIGH)
+		return false;
+
+	lcd_send_byte(0x43);
+
+	digitalWrite(PIN_LCD_CE, HIGH);
+
+	_delay_us(3);
+
+	for(uint8_t i=0; i<4; i++){
+		data[i] = lcd_receive_byte();
+	}
+
+	digitalWrite(PIN_LCD_CE, LOW);
+
+	return true;
+}
+
+bool lcd_can_receive_frame()
+{
+	return (digitalRead(PIN_LCD_DO) == LOW);
+}
+
 void setup()
 {
 	init_io();
+
+	//digitalWrite(PIN_LED, HIGH);
 
 	digitalWrite(PIN_MAIN_POWER_CONTROL, HIGH);
 }
 
 void loop()
 {
+	if(lcd_can_receive_frame()){
+		uint8_t data[4];
+		lcd_receive_frame(data);
+
+		digitalWrite(PIN_LED, HIGH);
+		_delay_ms(50);
+		digitalWrite(PIN_LED, LOW);
+	}
+
 	{
 		static uint8_t a = 0;
 		uint8_t data[] = {
@@ -127,6 +168,7 @@ void loop()
 		if(a >= 164)
 			a = 0;
 	}
+
 	/*{
 		static uint8_t a = 0;
 		// First 44 bits are display data
