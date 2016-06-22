@@ -299,14 +299,17 @@ void loop()
 	aa++;
 	if(aa == 0){
 		uint8_t fader = 15; // 0...15 (-infdB...0dB)
+		uint8_t super_bass = 0; // 0...10
+		uint8_t bass = 0; // 0=neutral, 1...7=boost, 9...15=cut
+		uint8_t treble = 0; // 0=neutral, 1...7=boost, 9...15=cut
 		uint8_t volume = 130; // max. 164
 		uint8_t input_switch = 0; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
 		uint8_t mute_switch = 0; // 0, 1
 		uint8_t channel_sel = 3; // 0=initial, 1=L, 2=R, 3=both
 		uint8_t output_gain = 0; // 0=0dB, 1=0dB, 2=+6.5dB, 3=+8.5dB
 		uint8_t data[] = {
-			0x00 | ((fader & 0x0f) << 0),
-			0x00,
+			0x00 | ((fader & 0x0f) << 0) | ((super_bass & 0x0f) << 4),
+			0x00 | ((bass & 0x0f) << 0) | ((treble & 0x0f) << 4),
 			volume,
 			0x00 | ((input_switch & 0x03) << 4) | ((output_gain & 0x01) << 6),
 			0x00 | ((input_switch & 0x04) >> 2) | ((channel_sel & 0x03) << 1) | ((mute_switch & 0x01) << 3) | ((output_gain & 0x02) << 6),
