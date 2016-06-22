@@ -6,6 +6,9 @@ const int PIN_LCD_DI = 9;
 const int PIN_LCD_DO = 10;
 const int PIN_ENCODER1 = A0;
 const int PIN_ENCODER2 = A1;
+const int PIN_VOL_CE = 11;
+const int PIN_VOL_DI = 12;
+const int PIN_VOL_CL = 13;
 
 uint8_t g_encoder_last_state = 0xff;
 
@@ -24,6 +27,10 @@ void init_io()
 
 	pinMode(PIN_ENCODER1, INPUT);
 	pinMode(PIN_ENCODER2, INPUT);
+
+	pinMode(PIN_VOL_CE, OUTPUT);
+	pinMode(PIN_VOL_DI, OUTPUT);
+	pinMode(PIN_VOL_CL, OUTPUT);
 }
 
 // Bits are sent LSB first
@@ -141,6 +148,45 @@ bool lcd_can_receive_frame()
 	return (digitalRead(PIN_LCD_DO) == LOW);
 }
 
+// Bits are sent LSB first
+void vol_send_byte(uint8_t b)
+{
+	for(uint8_t i=0; i<8; i++){
+		digitalWrite(PIN_VOL_DI, b & (1<<i) ? HIGH : LOW);
+		_delay_us(1);
+		digitalWrite(PIN_VOL_CL, HIGH);
+		_delay_us(1);
+		digitalWrite(PIN_VOL_CL, LOW);
+	}
+}
+void vol_send_halfbyte(uint8_t b)
+{
+	for(uint8_t i=0; i<4; i++){
+		digitalWrite(PIN_VOL_DI, b & (1<<i) ? HIGH : LOW);
+		_delay_us(1);
+		digitalWrite(PIN_VOL_CL, HIGH);
+		_delay_us(1);
+		digitalWrite(PIN_VOL_CL, LOW);
+	}
+}
+
+// data: 6 bytes (last 4 bits unused)
+void vol_send_data(uint8_t *data)
+{
+	vol_send_byte(0x81);
+	_delay_us(1);
+	digitalWrite(PIN_VOL_CE, HIGH);
+	_delay_us(1);
+	vol_send_byte(data[0]);
+	vol_send_byte(data[1]);
+	vol_send_byte(data[2]);
+	vol_send_byte(data[3]);
+	vol_send_byte(data[4]);
+	vol_send_halfbyte(data[5]);
+	digitalWrite(PIN_VOL_CE, LOW);
+	_delay_us(1);
+}
+
 void handle_encoder()
 {
 	bool e1 = digitalRead(PIN_ENCODER1);
@@ -244,6 +290,26 @@ void loop()
 			0xff, 0xff, 0xff, 0xff, 0xff,
 		};
 		lcd_send_display(0x24, data);
+	}
+
+	static uint8_t aa = 255;
+	aa++;
+	if(aa == 0){
+		uint8_t fader = 15; // 0...15 (-infdB...0dB)
+		uint8_t volume = 130; // max. 164
+		uint8_t input_switch = 0; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
+		uint8_t mute_switch = 0; // 0, 1
+		uint8_t channel_sel = 3; // 0=initial, 1=L, 2=R, 3=both
+		uint8_t output_gain = 0; // 0=0dB, 1=0dB, 2=+6.5dB, 3=+8.5dB
+		uint8_t data[] = {
+			0x00 | ((fader & 0x0f) << 0),
+			0x00,
+			volume,
+			0x00 | ((input_switch & 0x03) << 4) | ((output_gain & 0x01) << 6),
+			0x00 | ((input_switch & 0x04) >> 2) | ((channel_sel & 0x03) << 1) | ((mute_switch & 0x01) << 3) | ((output_gain & 0x02) << 6),
+			0x00, // 4 test mode bits and 4 dummy bits
+		};
+		vol_send_data(data);
 	}
 
 	/*{
