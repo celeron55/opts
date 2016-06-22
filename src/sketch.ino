@@ -13,6 +13,24 @@ const int PIN_STANDBY_DISABLE = 5;
 
 uint8_t g_encoder_last_state = 0xff;
 
+enum ControlMode {
+	CM_AUX,
+	CM_INTERNAL,
+} g_control_mode = CM_AUX;
+
+struct VolumeControls {
+	uint8_t fader = 15; // 0...15 (-infdB...0dB)
+	uint8_t super_bass = 0; // 0...10
+	uint8_t bass = 0; // 0=neutral, 1...7=boost, 9...15=cut
+	uint8_t treble = 0; // 0=neutral, 1...7=boost, 9...15=cut
+	uint8_t volume = 70;
+	uint8_t input_switch = 0; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
+	uint8_t mute_switch = 0; // 0, 1
+	uint8_t channel_sel = 3; // 0=initial, 1=L, 2=R, 3=both
+	uint8_t output_gain = 0; // 0=0dB, 1=0dB, 2=+6.5dB, 3=+8.5dB
+};
+VolumeControls g_volume_controls;
+
 //uint8_t g_debug_test_segment_i = 0;
 
 uint8_t g_display_data[] = {
@@ -369,6 +387,35 @@ void vol_send_data(uint8_t *data)
 	_delay_us(1);
 }
 
+uint8_t map_volume(uint8_t volume)
+{
+	if(volume == 0)
+		return 0;
+	uint8_t result = 9;
+	for(uint8_t i=1; i<volume; i++){
+		do {
+			result++;
+		} while(((result + 3) & 0x07) < 4);
+	}
+	if(result > 164)
+		return 164;
+	return result;
+}
+
+void send_volume_update()
+{
+	const VolumeControls &vc = g_volume_controls;
+	uint8_t data[] = {
+		0x00 | ((vc.fader & 0x0f) << 0) | ((vc.super_bass & 0x0f) << 4),
+		0x00 | ((vc.bass & 0x0f) << 0) | ((vc.treble & 0x0f) << 4),
+		map_volume(vc.volume), // Only weirdly selected values are allowed
+		0x00 | ((vc.input_switch & 0x03) << 4) | ((vc.output_gain & 0x01) << 6),
+		0x00 | ((vc.input_switch & 0x04) >> 2) | ((vc.channel_sel & 0x03) << 1) | ((vc.mute_switch & 0x01) << 3) | ((vc.output_gain & 0x02) << 6),
+		0x00, // 4 test mode bits and 4 dummy bits
+	};
+	vol_send_data(data);
+}
+
 void handle_encoder()
 {
 	bool e1 = digitalRead(PIN_ENCODER1);
@@ -428,18 +475,49 @@ void handle_encoder()
 	}
 
 	if(rot != 0){
-		Serial.print(F("<ENC:"));
-		Serial.println(rot);
-
 		/*g_debug_test_segment_i += rot;
 		Serial.println(g_debug_test_segment_i);
 		uint8_t a = g_debug_test_segment_i;
 		memset(g_display_data, 0, sizeof g_display_data);
 		g_display_data[a/8] = 1 << (a % 8);*/
+
+		if(g_control_mode == CM_AUX){
+			g_volume_controls.volume += rot;
+			send_volume_update();
+		} else {
+			Serial.print(F("<ENC:"));
+			Serial.println(rot);
+		}
 	}
 
 
 	g_encoder_last_state = (e1 ? 1 : 0) | (e2 ? 2 : 0);
+}
+
+void mode_update()
+{
+	if(g_control_mode == CM_AUX){
+		set_segment_char(0, 'A');
+		set_segment_char(1, 'U');
+		set_segment_char(2, 'X');
+		set_segment_char(3, ' ');
+		char buf[4] = {0};
+		snprintf(buf, 4, "%i  ", g_volume_controls.volume);
+		set_segment_char(4, buf[0]);
+		set_segment_char(5, buf[1]);
+		set_segment_char(6, buf[2]);
+		set_segment_char(7, ' ');
+	}
+	else if(g_control_mode == CM_INTERNAL){
+		set_segment_char(0, 'I');
+		set_segment_char(1, 'N');
+		set_segment_char(2, 'T');
+		set_segment_char(3, 'E');
+		set_segment_char(4, 'R');
+		set_segment_char(5, 'N');
+		set_segment_char(6, 'A');
+		set_segment_char(7, 'L');
+	}
 }
 
 void setup()
@@ -450,14 +528,15 @@ void setup()
 
 	digitalWrite(PIN_MAIN_POWER_CONTROL, HIGH);
 
-	set_segment_char(0, 'A');
-	set_segment_char(1, 'B');
-	set_segment_char(2, 'C');
-	set_segment_char(3, 'D');
-	set_segment_char(4, 'E');
-	set_segment_char(5, 'F');
-	set_segment_char(6, 'G');
-	set_segment_char(7, 'H');
+	mode_update();
+
+	// Wait for a bit so that the volume controller is ready to receive data and
+	// then update it before doing anything else
+	_delay_ms(10);
+	send_volume_update();
+
+	// Disable amplifier standby after writing all that prior stuff
+	digitalWrite(PIN_STANDBY_DISABLE, HIGH);
 }
 
 void loop()
@@ -480,50 +559,8 @@ void loop()
 		digitalWrite(PIN_LED, LOW);
 	}
 
-	{
-		lcd_send_display(0x24, g_display_data);
-	}
+	mode_update();
 
-	static uint8_t aa = 255;
-	aa++;
-	if(aa == 0){
-		uint8_t fader = 15; // 0...15 (-infdB...0dB)
-		uint8_t super_bass = 0; // 0...10
-		uint8_t bass = 0; // 0=neutral, 1...7=boost, 9...15=cut
-		uint8_t treble = 0; // 0=neutral, 1...7=boost, 9...15=cut
-		uint8_t volume = 130; // max. 164
-		uint8_t input_switch = 0; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
-		uint8_t mute_switch = 0; // 0, 1
-		uint8_t channel_sel = 3; // 0=initial, 1=L, 2=R, 3=both
-		uint8_t output_gain = 0; // 0=0dB, 1=0dB, 2=+6.5dB, 3=+8.5dB
-		uint8_t data[] = {
-			0x00 | ((fader & 0x0f) << 0) | ((super_bass & 0x0f) << 4),
-			0x00 | ((bass & 0x0f) << 0) | ((treble & 0x0f) << 4),
-			volume,
-			0x00 | ((input_switch & 0x03) << 4) | ((output_gain & 0x01) << 6),
-			0x00 | ((input_switch & 0x04) >> 2) | ((channel_sel & 0x03) << 1) | ((mute_switch & 0x01) << 3) | ((output_gain & 0x02) << 6),
-			0x00, // 4 test mode bits and 4 dummy bits
-		};
-		vol_send_data(data);
-	}
-
-	// Disable standby after writing all that prior stuff
-	digitalWrite(PIN_STANDBY_DISABLE, HIGH);
-
-	/*{
-		static uint8_t a = 0;
-		uint8_t data[] = {
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-			0x00, 0x00, 0x00, 0x00, 0x00,
-			0x00, 0x00, 0x00, 0x00, 0x00,
-			0x00, 0x00, 0x00, 0x00, 0x00,
-		};
-		data[a/8] = 1 << (a % 8);
-		lcd_send_display(0x24, data);
-		a++;
-		if(a >= 164)
-			a = 0;
-		_delay_ms(100);
-	}*/
+	lcd_send_display(0x24, g_display_data);
 }
 
