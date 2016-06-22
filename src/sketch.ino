@@ -9,6 +9,7 @@ const int PIN_ENCODER2 = A1;
 const int PIN_VOL_CE = 11;
 const int PIN_VOL_DI = 12;
 const int PIN_VOL_CL = 13;
+const int PIN_STANDBY_DISABLE = 5;
 
 uint8_t g_encoder_last_state = 0xff;
 
@@ -31,6 +32,8 @@ void init_io()
 	pinMode(PIN_VOL_CE, OUTPUT);
 	pinMode(PIN_VOL_DI, OUTPUT);
 	pinMode(PIN_VOL_CL, OUTPUT);
+
+	pinMode(PIN_STANDBY_DISABLE, OUTPUT);
 }
 
 // Bits are sent LSB first
@@ -311,6 +314,9 @@ void loop()
 		};
 		vol_send_data(data);
 	}
+
+	// Disable standby after writing all that prior stuff
+	digitalWrite(PIN_STANDBY_DISABLE, HIGH);
 
 	/*{
 		static uint8_t a = 0;
