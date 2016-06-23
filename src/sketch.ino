@@ -24,6 +24,7 @@ struct VolumeControls {
 	uint8_t bass = 0; // 0=neutral, 1...7=boost, 9...15=cut
 	uint8_t treble = 0; // 0=neutral, 1...7=boost, 9...15=cut
 	uint8_t volume = 70;
+	// NOTE: in2=5=CD, in5=0=AUX
 	uint8_t input_switch = 0; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
 	uint8_t mute_switch = 0; // 0, 1
 	uint8_t channel_sel = 3; // 0=initial, 1=L, 2=R, 3=both
