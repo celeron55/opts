@@ -48,6 +48,7 @@ bool g_lcd_do_sleep = false;
 CommandAccumulator<50> command_accumulator;
 
 struct Mode {
+	const char *name;
 	void (*update)();
 	void (*handle_keys)();
 	void (*handle_encoder)(int8_t rot);
@@ -56,6 +57,7 @@ struct Mode {
 void power_off_update();
 void power_off_handle_keys();
 Mode g_mode_power_off = {
+	"POWER_OFF",
 	power_off_update,
 	power_off_handle_keys,
 	NULL,
@@ -65,6 +67,7 @@ void aux_update();
 void aux_handle_keys();
 void aux_handle_encoder(int8_t rot);
 Mode g_mode_aux = {
+	"AUX",
 	aux_update,
 	aux_handle_keys,
 	aux_handle_encoder,
@@ -74,6 +77,7 @@ void internal_update();
 void internal_handle_keys();
 void internal_handle_encoder(int8_t rot);
 Mode g_mode_internal = {
+	"INTERNAL",
 	internal_update,
 	internal_handle_keys,
 	internal_handle_encoder,
@@ -93,6 +97,9 @@ void power_off_handle_keys()
 	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
 		power_on();
 		g_current_mode = &g_mode_aux;
+
+		Serial.print(F("<MODE:"));
+		Serial.println(g_current_mode->name);
 	}
 }
 
@@ -114,6 +121,9 @@ void aux_handle_keys()
 	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
 		power_on();
 		g_current_mode = &g_mode_internal;
+
+		Serial.print(F("<MODE:"));
+		Serial.println(g_current_mode->name);
 	}
 }
 
@@ -150,6 +160,9 @@ void internal_handle_keys()
 	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
 		power_off();
 		g_current_mode = &g_mode_power_off;
+
+		Serial.print(F("<MODE:"));
+		Serial.println(g_current_mode->name);
 	}
 	for(uint8_t i=0; i<30; i++){
 		if(i == 22)
