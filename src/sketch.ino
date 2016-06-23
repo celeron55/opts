@@ -44,6 +44,120 @@ VolumeControls g_volume_controls;
 
 bool g_lcd_do_sleep = false;
 
+struct Mode {
+	void (*update)();
+	void (*handle_keys)();
+	void (*handle_encoder)(int8_t rot);
+};
+
+void power_off_update();
+void power_off_handle_keys();
+Mode g_mode_power_off = {
+	power_off_update,
+	power_off_handle_keys,
+	NULL,
+};
+
+void aux_update();
+void aux_handle_keys();
+void aux_handle_encoder(int8_t rot);
+Mode g_mode_aux = {
+	aux_update,
+	aux_handle_keys,
+	aux_handle_encoder,
+};
+
+void internal_update();
+void internal_handle_keys();
+void internal_handle_encoder(int8_t rot);
+Mode g_mode_internal = {
+	internal_update,
+	internal_handle_keys,
+	internal_handle_encoder,
+};
+
+Mode *g_current_mode = &g_mode_internal;
+
+void power_off_update()
+{
+	set_segments(0, "POWER OFF");
+}
+
+void power_off_handle_keys()
+{
+	// Power button
+	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
+		power_on();
+		g_current_mode = &g_mode_aux;
+	}
+}
+
+void aux_update()
+{
+	char buf[10] = {0};
+	snprintf(buf, 10, "AUX %i    ", g_volume_controls.volume);
+	set_segments(0, buf);
+
+	if(g_volume_controls.input_switch != 0){
+		g_volume_controls.input_switch = 0;
+		send_volume_update();
+	}
+}
+
+void aux_handle_keys()
+{
+	// Power button
+	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
+		power_on();
+		g_current_mode = &g_mode_internal;
+	}
+}
+
+void aux_handle_encoder(int8_t rot)
+{
+	g_volume_controls.volume += rot;
+	if(g_volume_controls.volume > 80)
+		g_volume_controls.volume = 80;
+	send_volume_update();
+}
+
+void internal_update()
+{
+	set_segments(0, "INTERNAL");
+
+	if(g_volume_controls.input_switch != 5){
+		g_volume_controls.input_switch = 5;
+		send_volume_update();
+	}
+}
+
+void internal_handle_keys()
+{
+	// Power button
+	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
+		power_off();
+		g_current_mode = &g_mode_power_off;
+	}
+	for(uint8_t i=0; i<30; i++){
+		if(i == 22)
+			continue;
+		if(lcd_is_key_pressed(g_current_keys, i) && !lcd_is_key_pressed(g_previous_keys, i)){
+			Serial.print(F("<KEY_PRESS:"));
+			Serial.println(i);
+		}
+		if(!lcd_is_key_pressed(g_current_keys, i) && lcd_is_key_pressed(g_previous_keys, i)){
+			Serial.print(F("<KEY_RELEASE:"));
+			Serial.println(i);
+		}
+	}
+}
+
+void internal_handle_encoder(int8_t rot)
+{
+	Serial.print(F("<ENC:"));
+	Serial.println(rot);
+}
+
 void init_io()
 {
 	Serial.begin(9600);
@@ -319,16 +433,9 @@ void handle_encoder()
 		uint8_t a = g_debug_test_segment_i;
 		memset(g_display_data, 0, sizeof g_display_data);
 		g_display_data[a/8] = 1 << (a % 8);*/
-
-		if(g_control_mode == CM_AUX){
-			g_volume_controls.volume += rot;
-			if(g_volume_controls.volume > 80)
-				g_volume_controls.volume = 80;
-			send_volume_update();
-		} else {
-			Serial.print(F("<ENC:"));
-			Serial.println(rot);
-		}
+	
+		if(g_current_mode && g_current_mode->handle_encoder)
+			(*g_current_mode->handle_encoder)(rot);
 	}
 
 
@@ -337,55 +444,14 @@ void handle_encoder()
 
 void mode_update()
 {
-	if(g_control_mode == CM_POWER_OFF){
-		set_segments(0, "POWER OFF");
-	}
-	else if(g_control_mode == CM_AUX){
-		char buf[10] = {0};
-		snprintf(buf, 10, "AUX %i    ", g_volume_controls.volume);
-		set_segments(0, buf);
-
-		if(g_volume_controls.input_switch != 0){
-			g_volume_controls.input_switch = 0;
-			send_volume_update();
-		}
-	}
-	else if(g_control_mode == CM_INTERNAL){
-		set_segments(0, "INTERNAL");
-
-		if(g_volume_controls.input_switch != 5){
-			g_volume_controls.input_switch = 5;
-			send_volume_update();
-		}
-	}
+	if(g_current_mode && g_current_mode->update)
+		(*g_current_mode->update)();
 }
 
 void mode_handle_keys(uint8_t *keys)
 {
-	if(g_control_mode == CM_POWER_OFF){
-		// Power button
-		if(lcd_is_key_pressed(keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
-			power_on();
-			g_control_mode = CM_AUX;
-		}
-	}
-	else if(g_control_mode == CM_AUX){
-		// Power button
-		if(lcd_is_key_pressed(keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
-			power_off();
-			g_control_mode = CM_POWER_OFF;
-		}
-	}
-	else if(g_control_mode == CM_INTERNAL){
-		for(uint8_t i=0; i<30; i++){
-			if(i == 22)
-				continue;
-			if(lcd_is_key_pressed(keys, i)){
-				Serial.print(F("<KEY:"));
-				Serial.println(i);
-			}
-		}
-	}
+	if(g_current_mode && g_current_mode->handle_keys)
+		(*g_current_mode->handle_keys)();
 }
 
 void power_off()
