@@ -1,4 +1,5 @@
 #include "lcd.h"
+#include "command_accumulator.h"
 
 const int PIN_LED = 13;
 const int PIN_MAIN_POWER_CONTROL = 4;
@@ -44,6 +45,8 @@ VolumeControls g_volume_controls;
 
 bool g_lcd_do_sleep = false;
 
+CommandAccumulator<50> command_accumulator;
+
 struct Mode {
 	void (*update)();
 	void (*handle_keys)();
@@ -75,6 +78,7 @@ Mode g_mode_internal = {
 	internal_handle_keys,
 	internal_handle_encoder,
 };
+char g_internal_display_text[9] = "INTERNAL";
 
 Mode *g_current_mode = &g_mode_internal;
 
@@ -123,7 +127,16 @@ void aux_handle_encoder(int8_t rot)
 
 void internal_update()
 {
-	set_segments(0, "INTERNAL");
+	while(command_accumulator.read(Serial)){
+		const char *command = command_accumulator.command();
+		if(strncmp(command, ">SET_TEXT:", 10) == 0){
+			const char *text = &command[10];
+			snprintf(g_internal_display_text, sizeof g_internal_display_text, text);
+			continue;
+		}
+	}
+
+	set_all_segments(g_internal_display_text);
 
 	if(g_volume_controls.input_switch != 5){
 		g_volume_controls.input_switch = 5;

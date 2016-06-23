@@ -188,3 +188,16 @@ void set_segments(uint8_t i0, const char *text)
 	}
 }
 
+void set_all_segments(const char *text)
+{
+	const char *p = text;
+	for(uint8_t i = 0; i<8; i++){
+		if(*p != 0){
+			set_segment_char(i, *p);
+			p++;
+		} else {
+			set_segment_char(i, ' ');
+		}
+	}
+}
+
