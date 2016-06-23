@@ -13,7 +13,13 @@ const int PIN_STANDBY_DISABLE = 5;
 
 uint8_t g_encoder_last_state = 0xff;
 
+uint8_t g_previous_keys[4] = {0, 0, 0, 0};
+uint8_t g_current_keys[4] = {0, 0, 0, 0};
+// Timestamp is needed because no-keys-pressed is not received
+uint32_t g_last_keys_timestamp = 0;
+
 enum ControlMode {
+	CM_POWER_OFF,
 	CM_AUX,
 	CM_INTERNAL,
 } g_control_mode = CM_AUX;
@@ -28,11 +34,13 @@ struct VolumeControls {
 	uint8_t input_switch = 0; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
 	uint8_t mute_switch = 0; // 0, 1
 	uint8_t channel_sel = 3; // 0=initial, 1=L, 2=R, 3=both
-	uint8_t output_gain = 0; // 0=0dB, 1=0dB, 2=+6.5dB, 3=+8.5dB
+	uint8_t output_gain = 2; // 0=0dB, 1=0dB, 2=+6.5dB, 3=+8.5dB
 };
 VolumeControls g_volume_controls;
 
 //uint8_t g_debug_test_segment_i = 0;
+
+bool g_lcd_do_sleep = false;
 
 uint8_t g_display_data[] = {
 	0x11, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -211,6 +219,17 @@ void set_segment_char(uint8_t seg_i, char c)
 	}
 }
 
+void set_segments(uint8_t i0, const char *text)
+{
+	const char *p = text;
+	for(uint8_t i = i0; i<8; i++){
+		if(*p == 0)
+			break;
+		set_segment_char(i, *p);
+		p++;
+	}
+}
+
 void init_io()
 {
 	Serial.begin(9600);
@@ -349,6 +368,11 @@ bool lcd_can_receive_frame()
 	return (digitalRead(PIN_LCD_DO) == LOW);
 }
 
+bool lcd_is_key_pressed(const uint8_t *data, uint8_t key)
+{
+	return (data[key/8] & (1<<(key&7)));
+}
+
 // Bits are sent LSB first
 void vol_send_byte(uint8_t b)
 {
@@ -397,9 +421,9 @@ uint8_t map_volume(uint8_t volume)
 		do {
 			result++;
 		} while(((result + 3) & 0x07) < 4);
+		if(result > 164)
+			return 164;
 	}
-	if(result > 164)
-		return 164;
 	return result;
 }
 
@@ -484,6 +508,8 @@ void handle_encoder()
 
 		if(g_control_mode == CM_AUX){
 			g_volume_controls.volume += rot;
+			if(g_volume_controls.volume > 80)
+				g_volume_controls.volume = 80;
 			send_volume_update();
 		} else {
 			Serial.print(F("<ENC:"));
@@ -497,35 +523,57 @@ void handle_encoder()
 
 void mode_update()
 {
-	if(g_control_mode == CM_AUX){
-		set_segment_char(0, 'A');
-		set_segment_char(1, 'U');
-		set_segment_char(2, 'X');
-		set_segment_char(3, ' ');
-		char buf[4] = {0};
-		snprintf(buf, 4, "%i  ", g_volume_controls.volume);
-		set_segment_char(4, buf[0]);
-		set_segment_char(5, buf[1]);
-		set_segment_char(6, buf[2]);
-		set_segment_char(7, ' ');
+	if(g_control_mode == CM_POWER_OFF){
+		set_segments(0, "POWER OFF");
+	}
+	else if(g_control_mode == CM_AUX){
+		char buf[10] = {0};
+		snprintf(buf, 10, "AUX %i    ", g_volume_controls.volume);
+		set_segments(0, buf);
 	}
 	else if(g_control_mode == CM_INTERNAL){
-		set_segment_char(0, 'I');
-		set_segment_char(1, 'N');
-		set_segment_char(2, 'T');
-		set_segment_char(3, 'E');
-		set_segment_char(4, 'R');
-		set_segment_char(5, 'N');
-		set_segment_char(6, 'A');
-		set_segment_char(7, 'L');
+		set_segments(0, "INTERNAL");
 	}
 }
 
-void setup()
+void mode_handle_keys(uint8_t *keys)
 {
-	init_io();
+	if(g_control_mode == CM_POWER_OFF){
+		// Power button
+		if(lcd_is_key_pressed(keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
+			power_on();
+			g_control_mode = CM_AUX;
+		}
+	}
+	else if(g_control_mode == CM_AUX){
+		// Power button
+		if(lcd_is_key_pressed(keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
+			power_off();
+			g_control_mode = CM_POWER_OFF;
+		}
+	}
+	else if(g_control_mode == CM_INTERNAL){
+		for(uint8_t i=0; i<30; i++){
+			if(i == 22)
+				continue;
+			if(lcd_is_key_pressed(keys, i)){
+				Serial.print(F("<KEY:"));
+				Serial.println(i);
+			}
+		}
+	}
+}
 
-	//digitalWrite(PIN_LED, HIGH);
+void power_off()
+{
+	digitalWrite(PIN_MAIN_POWER_CONTROL, LOW);
+	digitalWrite(PIN_STANDBY_DISABLE, LOW);
+	g_lcd_do_sleep = true;
+}
+
+void power_on()
+{
+	g_lcd_do_sleep = false;
 
 	digitalWrite(PIN_MAIN_POWER_CONTROL, HIGH);
 
@@ -540,28 +588,35 @@ void setup()
 	digitalWrite(PIN_STANDBY_DISABLE, HIGH);
 }
 
+void setup()
+{
+	init_io();
+
+	//digitalWrite(PIN_LED, HIGH);
+
+	power_on();
+}
+
 void loop()
 {
 	handle_encoder();
 
 	if(lcd_can_receive_frame()){
 		digitalWrite(PIN_LED, HIGH);
-
-		uint8_t data[4];
-		lcd_receive_frame(data);
-
-		for(uint8_t i=0; i<30; i++){
-			if(data[i/8] & (1<<(i&7))){
-				Serial.print(F("<KEY:"));
-				Serial.println(i);
-			}
-		}
-
+		memcpy(g_previous_keys, g_current_keys, sizeof g_previous_keys);
+		lcd_receive_frame(g_current_keys);
+		mode_handle_keys(g_current_keys);
 		digitalWrite(PIN_LED, LOW);
+		g_last_keys_timestamp = millis();
+	} else if(g_last_keys_timestamp < millis() - 100){
+		memcpy(g_previous_keys, g_current_keys, sizeof g_previous_keys);
+		memset(g_current_keys, 0, sizeof g_current_keys);
+		mode_handle_keys(g_current_keys);
+		g_last_keys_timestamp = millis();
 	}
 
 	mode_update();
 
-	lcd_send_display(0x24, g_display_data);
+	lcd_send_display(0x24 | (g_lcd_do_sleep ? 0x07 : 0), g_display_data);
 }
 
