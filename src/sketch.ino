@@ -13,6 +13,8 @@ const int PIN_VOL_CE = 11;
 const int PIN_VOL_DI = 12;
 const int PIN_VOL_CL = 13;
 const int PIN_STANDBY_DISABLE = 5;
+const int PIN_INTERNAL_POWER_OFF = 2;
+//const int PIN_IGNITION_INPUT = ?; // TODO
 
 uint8_t g_encoder_last_state = 0xff;
 
@@ -20,6 +22,11 @@ uint8_t g_previous_keys[4] = {0, 0, 0, 0};
 uint8_t g_current_keys[4] = {0, 0, 0, 0};
 // Timestamp is needed because no-keys-pressed is not received
 uint32_t g_last_keys_timestamp = 0;
+
+uint32_t g_second_counter_timestamp = 0;
+
+bool g_internal_power_on = false;
+uint8_t g_internal_power_off_timer = 0; // seconds, counts down
 
 enum ControlMode {
 	CM_POWER_OFF,
@@ -205,6 +212,7 @@ void init_io()
 	pinMode(PIN_VOL_CL, OUTPUT);
 
 	pinMode(PIN_STANDBY_DISABLE, OUTPUT);
+	pinMode(PIN_INTERNAL_POWER_OFF, OUTPUT);
 }
 
 // Bits are sent LSB first
@@ -482,13 +490,21 @@ void mode_handle_keys(uint8_t *keys)
 
 void power_off()
 {
+	g_internal_power_on = false;
+
 	digitalWrite(PIN_MAIN_POWER_CONTROL, LOW);
 	digitalWrite(PIN_STANDBY_DISABLE, LOW);
 	g_lcd_do_sleep = true;
+	g_internal_power_off_timer = 30;
 }
 
 void power_on()
 {
+	g_internal_power_on = true;
+
+	// Power up raspberry pi
+	digitalWrite(PIN_INTERNAL_POWER_OFF, LOW);
+
 	g_lcd_do_sleep = false;
 
 	digitalWrite(PIN_MAIN_POWER_CONTROL, HIGH);
@@ -515,6 +531,18 @@ void setup()
 
 void loop()
 {
+	if(g_second_counter_timestamp < millis() - 1000 || g_second_counter_timestamp > millis()){
+		g_second_counter_timestamp = millis();
+
+		if(!g_internal_power_on && g_internal_power_off_timer > 0){
+			g_internal_power_off_timer--;
+			if(g_internal_power_off_timer == 0){
+				// Power down raspberry pi
+				digitalWrite(PIN_INTERNAL_POWER_OFF, HIGH);
+			}
+		}
+	}
+
 	handle_encoder();
 
 	if(lcd_can_receive_frame()){
