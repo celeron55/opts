@@ -404,7 +404,7 @@ void vol_send_data(uint8_t *data)
 uint8_t map_basstreble(int8_t v)
 {
 	if(v < -7) return 15;
-	if(v < 0) return 16 + v;
+	if(v < 0) return 8 - v;
 	if(v > 7) return 7;
 	return v;
 }
