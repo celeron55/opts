@@ -23,8 +23,13 @@ uint16_t g_config_menu_show_timer = 0; // milliseconds; counts down
 enum ConfigOption {
 	CO_BASS,
 	CO_TREBLE,
+	CO_BENIS,
+
+	CO_NUM_OPTIONS,
 };
 ConfigOption g_config_option = CO_BASS;
+
+bool g_benis_mode_enabled = false;
 
 uint8_t g_previous_keys[4] = {0, 0, 0, 0};
 uint8_t g_current_keys[4] = {0, 0, 0, 0};
@@ -66,9 +71,9 @@ enum ControlMode {
 struct VolumeControls {
 	uint8_t fader = 15; // 0...15 (-infdB...0dB)
 	uint8_t super_bass = 0; // 0...10
-	int8_t bass = 0; // -7...7 * 4
-	int8_t treble = 0; // -7...7 * 4
-	uint8_t volume = 55;
+	int8_t bass = 0; // -7...7
+	int8_t treble = 0; // -7...7
+	uint8_t volume = 45;
 	// NOTE: in2=5=CD, in5=0=AUX
 	uint8_t input_switch = 5; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
 	uint8_t mute_switch = 0; // 0, 1
@@ -411,8 +416,8 @@ void send_volume_update()
 	uint8_t data[] = {
 		0x00 | ((vc.fader & 0x0f) << 0) | ((vc.super_bass & 0x0f) << 4),
 		// 0=neutral, 1...7=boost, 9...15=cut
-		0x00 | ((map_basstreble(vc.bass/4) & 0x0f) << 0) |
-				((map_basstreble(vc.treble/4) & 0x0f) << 4),
+		0x00 | ((map_basstreble(vc.bass) & 0x0f) << 0) |
+				((map_basstreble(vc.treble) & 0x0f) << 4),
 		map_volume(vc.volume), // Only weirdly selected values are allowed
 		0x00 | ((vc.input_switch & 0x03) << 4) | ((vc.output_gain & 0x01) << 6),
 		0x00 | ((vc.input_switch & 0x04) >> 2) | ((vc.channel_sel & 0x03) << 1) | ((vc.mute_switch & 0x01) << 3) | ((vc.output_gain & 0x02) << 6),
@@ -438,21 +443,39 @@ void handle_encoder_value(int8_t rot)
 		set_all_segments(g_temp_display_data, buf);
 		g_temp_display_data_timer = 1000;
 	} else if(g_config_option == CO_BASS){
-		g_volume_controls.bass += rot;
-		if(g_volume_controls.bass > 7*4)
-			g_volume_controls.bass = 7*4;
-		else if(g_volume_controls.bass < -7*4)
-			g_volume_controls.bass = -7*4;
-		send_volume_update();
-		g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+		static int8_t a = 0;
+		a += rot;
+		if(a / 4 != 0){
+			g_volume_controls.bass += a / 4;
+			if(g_volume_controls.bass > 7)
+				g_volume_controls.bass = 7;
+			else if(g_volume_controls.bass < -7)
+				g_volume_controls.bass = -7;
+			send_volume_update();
+			a = 0;
+			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+		}
 	} else if(g_config_option == CO_TREBLE){
-		g_volume_controls.treble += rot;
-		if(g_volume_controls.treble > 7*4)
-			g_volume_controls.treble = 7*4;
-		else if(g_volume_controls.treble < -7*4)
-			g_volume_controls.treble = -7*4;
-		send_volume_update();
-		g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+		static int8_t a = 0;
+		a += rot;
+		if(a / 4 != 0){
+			g_volume_controls.treble += a / 4;
+			if(g_volume_controls.treble > 7)
+				g_volume_controls.treble = 7;
+			else if(g_volume_controls.treble < -7)
+				g_volume_controls.treble = -7;
+			send_volume_update();
+			a = 0;
+			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+		}
+	} else if(g_config_option == CO_BENIS){
+		static int8_t a = 0;
+		a += rot;
+		if(a <= -4 || a >= 4){
+			g_benis_mode_enabled = !g_benis_mode_enabled;
+			a = 0;
+			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+		}
 	}
 }
 
@@ -536,11 +559,10 @@ void mode_update()
 
 void handle_config_item_switch()
 {
-	if(g_config_option == CO_BASS){
-		g_config_option = CO_TREBLE;
-	} else if(g_config_option == CO_TREBLE){
-		g_config_option = CO_BASS;
-	}
+	if(g_config_option < CO_NUM_OPTIONS - 1)
+		g_config_option = (ConfigOption)(g_config_option + 1);
+	else
+		g_config_option = (ConfigOption)0;
 	g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
 }
 
@@ -593,7 +615,8 @@ void display_special_stuff()
 			set_all_segments(g_temp_display_data, buf);
 			g_temp_display_data_timer = 1;
 			return;
-		} else if(g_config_option == CO_TREBLE){
+		}
+		if(g_config_option == CO_TREBLE){
 			memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
 			char buf[10] = {0};
 			snprintf(buf, 10, "TREB %i    ", g_volume_controls.treble);
@@ -602,6 +625,21 @@ void display_special_stuff()
 			g_temp_display_data_timer = 1;
 			return;
 		}
+		if(g_config_option == CO_BENIS){
+			memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+			char buf[10] = {0};
+			snprintf(buf, 10, "BENIS %i", g_benis_mode_enabled);
+			set_segments(g_display_data, 0, buf);
+			set_all_segments(g_temp_display_data, buf);
+			g_temp_display_data_timer = 1;
+			return;
+		}
+	}
+	if(g_benis_mode_enabled && g_temp_display_data_timer == 0){
+		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		set_all_segments(g_temp_display_data, " BENIS ");
+		g_temp_display_data_timer = 1;
+		return;
 	}
 }
 
