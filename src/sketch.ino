@@ -744,7 +744,7 @@ void loop()
 		handle_keys();
 		digitalWrite(PIN_LED, LOW);
 		g_last_keys_timestamp = millis();
-	} else if(g_last_keys_timestamp < millis() - 100){
+	} else if(g_last_keys_timestamp < millis() - 50){
 		memcpy(g_previous_keys, g_current_keys, sizeof g_previous_keys);
 		memset(g_current_keys, 0, sizeof g_current_keys);
 		handle_keys();
