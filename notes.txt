@@ -1,0 +1,8 @@
+sudo apt-get install gstreamer0.10-plugins-base
+sudo apt-get install gstreamer-tools
+sudo apt-get install gstreamer0.10-alsa
+sudo apt-get install gstreamer0.10-fluendo-mp3
+sudo apt-get install gstreamer-plugins-bad0.10-0
+sudo apt-get install gstreamer0.10-plugins-ugly
+sudo apt-get install gstreamer0.10-plugins-good
+
