@@ -24,22 +24,38 @@ uint8_t g_current_keys[4] = {0, 0, 0, 0};
 uint32_t g_last_keys_timestamp = 0;
 
 uint32_t g_second_counter_timestamp = 0;
+uint32_t g_millisecond_counter_timestamp = 0;
 
 bool g_internal_power_on = false;
-uint8_t g_internal_power_off_timer = 0; // seconds, counts down
+uint8_t g_internal_power_off_timer = 0; // seconds; counts down
+
+bool g_lcd_do_sleep = false;
+uint8_t g_display_data[] = {
+	0x11, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00,
+};
+uint8_t g_temp_display_data[] = {
+	0x11, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00,
+};
+uint16_t g_temp_display_data_timer = 0; // milliseconds; counts down
 
 enum ControlMode {
 	CM_POWER_OFF,
 	CM_AUX,
 	CM_INTERNAL,
-} g_control_mode = CM_AUX;
+} g_control_mode = CM_INTERNAL;
 
 struct VolumeControls {
 	uint8_t fader = 15; // 0...15 (-infdB...0dB)
 	uint8_t super_bass = 0; // 0...10
 	uint8_t bass = 0; // 0=neutral, 1...7=boost, 9...15=cut
 	uint8_t treble = 0; // 0=neutral, 1...7=boost, 9...15=cut
-	uint8_t volume = 70;
+	uint8_t volume = 55;
 	// NOTE: in2=5=CD, in5=0=AUX
 	uint8_t input_switch = 5; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
 	uint8_t mute_switch = 0; // 0, 1
@@ -49,8 +65,6 @@ struct VolumeControls {
 VolumeControls g_volume_controls;
 
 //uint8_t g_debug_test_segment_i = 0;
-
-bool g_lcd_do_sleep = false;
 
 CommandAccumulator<50> command_accumulator;
 
@@ -95,7 +109,7 @@ Mode *g_current_mode = &g_mode_internal;
 
 void power_off_update()
 {
-	set_segments(0, "POWER OFF");
+	set_segments(g_display_data, 0, "POWER OFF");
 }
 
 void power_off_handle_keys()
@@ -114,7 +128,7 @@ void aux_update()
 {
 	char buf[10] = {0};
 	snprintf(buf, 10, "AUX %i    ", g_volume_controls.volume);
-	set_segments(0, buf);
+	set_segments(g_display_data, 0, buf);
 
 	if(g_volume_controls.input_switch != 0){
 		g_volume_controls.input_switch = 0;
@@ -140,6 +154,13 @@ void aux_handle_encoder(int8_t rot)
 	if(g_volume_controls.volume > 80)
 		g_volume_controls.volume = 80;
 	send_volume_update();
+
+	g_temp_display_data_timer = 2000;
+	memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+	char buf[10] = {0};
+	snprintf(buf, 10, "VOL %i    ", g_volume_controls.volume);
+	set_segments(g_display_data, 0, buf);
+	set_all_segments(g_temp_display_data, buf);
 }
 
 void internal_update()
@@ -153,7 +174,7 @@ void internal_update()
 		}
 	}
 
-	set_all_segments(g_internal_display_text);
+	set_all_segments(g_display_data, g_internal_display_text);
 
 	if(g_volume_controls.input_switch != 5){
 		g_volume_controls.input_switch = 5;
@@ -187,8 +208,20 @@ void internal_handle_keys()
 
 void internal_handle_encoder(int8_t rot)
 {
-	Serial.print(F("<ENC:"));
-	Serial.println(rot);
+	/*Serial.print(F("<ENC:"));
+	Serial.println(rot);*/
+
+	g_volume_controls.volume += rot;
+	if(g_volume_controls.volume > 80)
+		g_volume_controls.volume = 80;
+	send_volume_update();
+
+	g_temp_display_data_timer = 2000;
+	memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+	char buf[10] = {0};
+	snprintf(buf, 10, "VOL %i    ", g_volume_controls.volume);
+	set_segments(g_display_data, 0, buf);
+	set_all_segments(g_temp_display_data, buf);
 }
 
 void init_io()
@@ -542,6 +575,18 @@ void loop()
 			}
 		}
 	}
+	if(g_millisecond_counter_timestamp > millis()){
+		// Overflow; just reset
+		g_millisecond_counter_timestamp = millis();
+	} else {
+		uint32_t dt_ms = millis() - g_millisecond_counter_timestamp;
+		g_millisecond_counter_timestamp = millis();
+
+		if(g_temp_display_data_timer > dt_ms)
+			g_temp_display_data_timer -= dt_ms;
+		else
+			g_temp_display_data_timer = 0;
+	}
 
 	handle_encoder();
 
@@ -561,6 +606,9 @@ void loop()
 
 	mode_update();
 
-	lcd_send_display(0x24 | (g_lcd_do_sleep ? 0x07 : 0), g_display_data);
+	if(g_temp_display_data_timer > 0)
+		lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
+	else
+		lcd_send_display(0x24 | (g_lcd_do_sleep ? 0x07 : 0), g_display_data);
 }
 

@@ -1,12 +1,5 @@
 #include "lcd.h"
 
-uint8_t g_display_data[] = {
-	0x11, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00,
-};
-
 // 14 segment digits, total of 8
 const uint8_t SEG_I_14[] PROGMEM = {
 //    1   2   3   4   5   6   7   8   9  10  11  12  13  14 (sequential)
@@ -164,39 +157,39 @@ const uint16_t CHAR_MAP_14SEG[] PROGMEM = {
 	0x3fff  //
 };
 
-void set_segment_char(uint8_t seg_i, char c)
+void set_segment_char(uint8_t *data, uint8_t seg_i, char c)
 {
 	const uint16_t segment_bits = pgm_read_word(&CHAR_MAP_14SEG[c]);
 	const uint8_t *seg_indexes = &SEG_I_14[seg_i * 14];
 	for(uint8_t i=0; i<14; i++){
 		uint8_t seg_i = pgm_read_byte(&seg_indexes[i]);
 		if(segment_bits & (1<<i))
-			g_display_data[seg_i/8] |= (1 << (seg_i % 8));
+			data[seg_i/8] |= (1 << (seg_i % 8));
 		else
-			g_display_data[seg_i/8] &= ~(1 << (seg_i % 8));
+			data[seg_i/8] &= ~(1 << (seg_i % 8));
 	}
 }
 
-void set_segments(uint8_t i0, const char *text)
+void set_segments(uint8_t *data, uint8_t i0, const char *text)
 {
 	const char *p = text;
 	for(uint8_t i = i0; i<8; i++){
 		if(*p == 0)
 			break;
-		set_segment_char(i, *p);
+		set_segment_char(data, i, *p);
 		p++;
 	}
 }
 
-void set_all_segments(const char *text)
+void set_all_segments(uint8_t *data, const char *text)
 {
 	const char *p = text;
 	for(uint8_t i = 0; i<8; i++){
 		if(*p != 0){
-			set_segment_char(i, *p);
+			set_segment_char(data, i, *p);
 			p++;
 		} else {
-			set_segment_char(i, ' ');
+			set_segment_char(data, i, ' ');
 		}
 	}
 }
