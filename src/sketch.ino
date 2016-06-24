@@ -14,7 +14,7 @@ const int PIN_VOL_DI = 12;
 const int PIN_VOL_CL = 13;
 const int PIN_STANDBY_DISABLE = 5;
 const int PIN_RASPBERRY_POWER_OFF = 2;
-//const int PIN_IGNITION_INPUT = ?; // TODO
+const int PIN_IGNITION_INPUT = A2;
 
 uint8_t g_encoder_last_state = 0xff;
 
@@ -38,6 +38,8 @@ uint32_t g_last_keys_timestamp = 0;
 
 uint32_t g_second_counter_timestamp = 0;
 uint32_t g_millisecond_counter_timestamp = 0;
+
+bool g_manual_power_state = false; // True if powered on/off regardless of ignition input
 
 bool g_amplifier_power_on = false;
 uint8_t g_amplifier_real_power_off_delay = 0; // seconds; counts down
@@ -128,8 +130,13 @@ void power_off_handle_keys()
 {
 	// Power button
 	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
-		power_on();
 		g_current_mode = &g_mode_aux;
+
+		power_on();
+
+		if(!digitalRead(PIN_IGNITION_INPUT)){
+			g_manual_power_state = true;
+		}
 
 		Serial.print(F("<MODE:"));
 		Serial.println(g_current_mode->name);
@@ -183,8 +190,13 @@ void raspberry_handle_keys()
 {
 	// Power button
 	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
-		power_off();
 		g_current_mode = &g_mode_power_off;
+
+		power_off();
+
+		if(digitalRead(PIN_IGNITION_INPUT)){
+			g_manual_power_state = true;
+		}
 
 		Serial.print(F("<MODE:"));
 		Serial.println(g_current_mode->name);
@@ -225,6 +237,8 @@ void init_io()
 
 	pinMode(PIN_STANDBY_DISABLE, OUTPUT);
 	pinMode(PIN_RASPBERRY_POWER_OFF, OUTPUT);
+
+	pinMode(PIN_IGNITION_INPUT, INPUT);
 }
 
 // Bits are sent LSB first
@@ -690,6 +704,15 @@ void setup()
 
 void loop()
 {
+	if(!g_manual_power_state){
+		if(digitalRead(PIN_IGNITION_INPUT) && !g_amplifier_power_on){
+			power_on();
+		}
+		else if(!digitalRead(PIN_IGNITION_INPUT) && g_amplifier_power_on){
+			power_off();
+		}
+	}
+
 	if(g_second_counter_timestamp < millis() - 1000 || g_second_counter_timestamp > millis()){
 		g_second_counter_timestamp = millis();
 
