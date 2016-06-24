@@ -18,6 +18,14 @@ const int PIN_INTERNAL_POWER_OFF = 2;
 
 uint8_t g_encoder_last_state = 0xff;
 
+#define CONFIG_MENU_TIMER_RESET_VALUE 3000
+uint16_t g_config_menu_show_timer = 0; // milliseconds; counts down
+enum ConfigOption {
+	CO_BASS,
+	CO_TREBLE,
+};
+ConfigOption g_config_option = CO_BASS;
+
 uint8_t g_previous_keys[4] = {0, 0, 0, 0};
 uint8_t g_current_keys[4] = {0, 0, 0, 0};
 // Timestamp is needed because no-keys-pressed is not received
@@ -26,8 +34,11 @@ uint32_t g_last_keys_timestamp = 0;
 uint32_t g_second_counter_timestamp = 0;
 uint32_t g_millisecond_counter_timestamp = 0;
 
+bool g_amplifier_power_on = false;
+uint8_t g_amplifier_real_power_off_delay = 0; // seconds; counts down
+
 bool g_internal_power_on = false;
-uint8_t g_internal_power_off_timer = 0; // seconds; counts down
+uint8_t g_internal_real_power_off_delay = 0; // seconds; counts down
 
 bool g_lcd_do_sleep = false;
 uint8_t g_display_data[] = {
@@ -53,8 +64,8 @@ enum ControlMode {
 struct VolumeControls {
 	uint8_t fader = 15; // 0...15 (-infdB...0dB)
 	uint8_t super_bass = 0; // 0...10
-	uint8_t bass = 0; // 0=neutral, 1...7=boost, 9...15=cut
-	uint8_t treble = 0; // 0=neutral, 1...7=boost, 9...15=cut
+	int8_t bass = 0; // -7...7 * 4
+	int8_t treble = 0; // -7...7 * 4
 	uint8_t volume = 55;
 	// NOTE: in2=5=CD, in5=0=AUX
 	uint8_t input_switch = 5; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
@@ -172,7 +183,7 @@ void internal_handle_keys()
 		Serial.println(g_current_mode->name);
 	}
 	for(uint8_t i=0; i<30; i++){
-		if(i == 22)
+		if(i == 22 || i == 28)
 			continue;
 		if(lcd_is_key_pressed(g_current_keys, i) && !lcd_is_key_pressed(g_previous_keys, i)){
 			Serial.print(F("<KEY_PRESS:"));
@@ -368,6 +379,15 @@ void vol_send_data(uint8_t *data)
 	_delay_us(1);
 }
 
+// -7...7 -> 0=neutral, 1...7=boost, 9...15=cut
+uint8_t map_basstreble(int8_t v)
+{
+	if(v < -7) return 15;
+	if(v < 0) return 16 + v;
+	if(v > 7) return 7;
+	return v;
+}
+
 uint8_t map_volume(uint8_t volume)
 {
 	if(volume == 0)
@@ -388,7 +408,9 @@ void send_volume_update()
 	const VolumeControls &vc = g_volume_controls;
 	uint8_t data[] = {
 		0x00 | ((vc.fader & 0x0f) << 0) | ((vc.super_bass & 0x0f) << 4),
-		0x00 | ((vc.bass & 0x0f) << 0) | ((vc.treble & 0x0f) << 4),
+		// 0=neutral, 1...7=boost, 9...15=cut
+		0x00 | ((map_basstreble(vc.bass/4) & 0x0f) << 0) |
+				((map_basstreble(vc.treble/4) & 0x0f) << 4),
 		map_volume(vc.volume), // Only weirdly selected values are allowed
 		0x00 | ((vc.input_switch & 0x03) << 4) | ((vc.output_gain & 0x01) << 6),
 		0x00 | ((vc.input_switch & 0x04) >> 2) | ((vc.channel_sel & 0x03) << 1) | ((vc.mute_switch & 0x01) << 3) | ((vc.output_gain & 0x02) << 6),
@@ -399,17 +421,37 @@ void send_volume_update()
 
 void handle_encoder_value(int8_t rot)
 {
-	g_volume_controls.volume += rot;
-	if(g_volume_controls.volume > 80)
-		g_volume_controls.volume = 80;
-	send_volume_update();
+	if(g_config_menu_show_timer == 0){
+		g_volume_controls.volume += rot;
+		if(g_volume_controls.volume > 80)
+			g_volume_controls.volume = 80;
+		else if(g_volume_controls.volume > 250)
+			g_volume_controls.volume = 0;
+		send_volume_update();
 
-	g_temp_display_data_timer = 1000;
-	memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
-	char buf[10] = {0};
-	snprintf(buf, 10, "VOL %i    ", g_volume_controls.volume);
-	set_segments(g_display_data, 0, buf);
-	set_all_segments(g_temp_display_data, buf);
+		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		char buf[10] = {0};
+		snprintf(buf, 10, "VOL %i    ", g_volume_controls.volume);
+		set_segments(g_display_data, 0, buf);
+		set_all_segments(g_temp_display_data, buf);
+		g_temp_display_data_timer = 1000;
+	} else if(g_config_option == CO_BASS){
+		g_volume_controls.bass += rot;
+		if(g_volume_controls.bass > 7*4)
+			g_volume_controls.bass = 7*4;
+		else if(g_volume_controls.bass < -7*4)
+			g_volume_controls.bass = -7*4;
+		send_volume_update();
+		g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+	} else if(g_config_option == CO_TREBLE){
+		g_volume_controls.treble += rot;
+		if(g_volume_controls.treble > 7*4)
+			g_volume_controls.treble = 7*4;
+		else if(g_volume_controls.treble < -7*4)
+			g_volume_controls.treble = -7*4;
+		send_volume_update();
+		g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+	}
 }
 
 void handle_encoder()
@@ -490,31 +532,100 @@ void mode_update()
 		(*g_current_mode->update)();
 }
 
-void mode_handle_keys(uint8_t *keys)
+void handle_config_item_switch()
 {
+	if(g_config_option == CO_BASS){
+		g_config_option = CO_TREBLE;
+	} else if(g_config_option == CO_TREBLE){
+		g_config_option = CO_BASS;
+	}
+	g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+}
+
+void handle_config_button()
+{
+	static uint8_t press_timer = 0;
+	if(g_config_menu_show_timer == 0){
+		if(lcd_is_key_pressed(g_current_keys, 28)){
+			press_timer++;
+			if(press_timer >= 40){
+				g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+				press_timer = 0;
+			}
+		} else {
+			press_timer = 0;
+		}
+	} else {
+		if(lcd_is_key_pressed(g_current_keys, 28) && !lcd_is_key_pressed(g_previous_keys, 28)){
+			handle_config_item_switch();
+		}
+	}
+}
+
+void handle_keys()
+{
+	handle_config_button();
+
 	if(g_current_mode && g_current_mode->handle_keys)
 		(*g_current_mode->handle_keys)();
 }
 
+// Returns true if special stuff is shown
+// Sets special stuff into g_temp_display_data and sets
+// g_temp_display_data_timer to 1 in order for it to be shown during the next
+// update
+void display_special_stuff()
+{
+	if(!g_amplifier_power_on && g_amplifier_real_power_off_delay > 0){
+		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		set_all_segments(g_temp_display_data, "SHUTDOWN");
+		g_temp_display_data_timer = 1;
+		return;
+	}
+	if(g_config_menu_show_timer > 0){
+		if(g_config_option == CO_BASS){
+			memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+			char buf[10] = {0};
+			snprintf(buf, 10, "BASS %i    ", g_volume_controls.bass);
+			set_segments(g_display_data, 0, buf);
+			set_all_segments(g_temp_display_data, buf);
+			g_temp_display_data_timer = 1;
+			return;
+		} else if(g_config_option == CO_TREBLE){
+			memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+			char buf[10] = {0};
+			snprintf(buf, 10, "TREB %i    ", g_volume_controls.treble);
+			set_segments(g_display_data, 0, buf);
+			set_all_segments(g_temp_display_data, buf);
+			g_temp_display_data_timer = 1;
+			return;
+		}
+	}
+}
+
 void power_off()
 {
-	g_internal_power_on = false;
-
-	digitalWrite(PIN_MAIN_POWER_CONTROL, LOW);
+	// Standby amplifier
 	digitalWrite(PIN_STANDBY_DISABLE, LOW);
+
 	g_lcd_do_sleep = true;
-	g_internal_power_off_timer = 30;
+
+	g_internal_power_on = false;
+	g_internal_real_power_off_delay = 30;
+
+	g_amplifier_power_on = false;
+	g_amplifier_real_power_off_delay = 2;
 }
 
 void power_on()
 {
-	g_internal_power_on = true;
-
 	// Power up raspberry pi
 	digitalWrite(PIN_INTERNAL_POWER_OFF, LOW);
+	g_internal_power_on = true;
 
 	g_lcd_do_sleep = false;
 
+	// Power up main amplifier board supply
 	digitalWrite(PIN_MAIN_POWER_CONTROL, HIGH);
 
 	mode_update();
@@ -526,6 +637,7 @@ void power_on()
 
 	// Disable amplifier standby after writing all that prior stuff
 	digitalWrite(PIN_STANDBY_DISABLE, HIGH);
+	g_amplifier_power_on = true;
 }
 
 void setup()
@@ -540,11 +652,19 @@ void loop()
 	if(g_second_counter_timestamp < millis() - 1000 || g_second_counter_timestamp > millis()){
 		g_second_counter_timestamp = millis();
 
-		if(!g_internal_power_on && g_internal_power_off_timer > 0){
-			g_internal_power_off_timer--;
-			if(g_internal_power_off_timer == 0){
+		if(!g_internal_power_on && g_internal_real_power_off_delay > 0){
+			g_internal_real_power_off_delay--;
+			if(g_internal_real_power_off_delay == 0){
 				// Power down raspberry pi
 				digitalWrite(PIN_INTERNAL_POWER_OFF, HIGH);
+			}
+		}
+
+		if(!g_amplifier_power_on && g_amplifier_real_power_off_delay > 0){
+			g_amplifier_real_power_off_delay--;
+			if(g_amplifier_real_power_off_delay == 0){
+				// Power down main amplifier board supply
+				digitalWrite(PIN_MAIN_POWER_CONTROL, LOW);
 			}
 		}
 	}
@@ -559,6 +679,11 @@ void loop()
 			g_temp_display_data_timer -= dt_ms;
 		else
 			g_temp_display_data_timer = 0;
+
+		if(g_config_menu_show_timer > dt_ms)
+			g_config_menu_show_timer -= dt_ms;
+		else
+			g_config_menu_show_timer = 0;
 	}
 
 	handle_encoder();
@@ -567,17 +692,19 @@ void loop()
 		digitalWrite(PIN_LED, HIGH);
 		memcpy(g_previous_keys, g_current_keys, sizeof g_previous_keys);
 		lcd_receive_frame(g_current_keys);
-		mode_handle_keys(g_current_keys);
+		handle_keys();
 		digitalWrite(PIN_LED, LOW);
 		g_last_keys_timestamp = millis();
 	} else if(g_last_keys_timestamp < millis() - 100){
 		memcpy(g_previous_keys, g_current_keys, sizeof g_previous_keys);
 		memset(g_current_keys, 0, sizeof g_current_keys);
-		mode_handle_keys(g_current_keys);
+		handle_keys();
 		g_last_keys_timestamp = millis();
 	}
 
 	mode_update();
+
+	display_special_stuff();
 
 	if(g_temp_display_data_timer > 0)
 		lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
