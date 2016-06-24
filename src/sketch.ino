@@ -37,8 +37,10 @@ uint32_t g_millisecond_counter_timestamp = 0;
 bool g_amplifier_power_on = false;
 uint8_t g_amplifier_real_power_off_delay = 0; // seconds; counts down
 
-bool g_internal_power_on = false;
-uint8_t g_internal_real_power_off_delay = 0; // seconds; counts down
+bool g_raspberry_power_on = false;
+//uint8_t g_raspberry_send_power_off_delay = 0; // seconds; counts down
+//bool g_raspberry_have_to_do_power_cycle = false; // If true, raspberry has to be power cycled
+uint8_t g_raspberry_real_power_off_delay = 0; // seconds; counts down
 
 bool g_lcd_do_sleep = false;
 uint8_t g_display_data[] = {
@@ -101,16 +103,16 @@ Mode g_mode_aux = {
 	aux_handle_keys,
 };
 
-void internal_update();
-void internal_handle_keys();
-Mode g_mode_internal = {
+void raspberry_update();
+void raspberry_handle_keys();
+Mode g_mode_raspberry = {
 	"INTERNAL",
-	internal_update,
-	internal_handle_keys,
+	raspberry_update,
+	raspberry_handle_keys,
 };
-char g_internal_display_text[9] = "INTERNAL";
+char g_raspberry_display_text[9] = "INTERNAL";
 
-Mode *g_current_mode = &g_mode_internal;
+Mode *g_current_mode = &g_mode_raspberry;
 
 void power_off_update()
 {
@@ -146,25 +148,25 @@ void aux_handle_keys()
 	// Power button
 	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
 		power_on();
-		g_current_mode = &g_mode_internal;
+		g_current_mode = &g_mode_raspberry;
 
 		Serial.print(F("<MODE:"));
 		Serial.println(g_current_mode->name);
 	}
 }
 
-void internal_update()
+void raspberry_update()
 {
 	while(command_accumulator.read(Serial)){
 		const char *command = command_accumulator.command();
 		if(strncmp(command, ">SET_TEXT:", 10) == 0){
 			const char *text = &command[10];
-			snprintf(g_internal_display_text, sizeof g_internal_display_text, text);
+			snprintf(g_raspberry_display_text, sizeof g_raspberry_display_text, text);
 			continue;
 		}
 	}
 
-	set_all_segments(g_display_data, g_internal_display_text);
+	set_all_segments(g_display_data, g_raspberry_display_text);
 
 	if(g_volume_controls.input_switch != 5){
 		g_volume_controls.input_switch = 5;
@@ -172,7 +174,7 @@ void internal_update()
 	}
 }
 
-void internal_handle_keys()
+void raspberry_handle_keys()
 {
 	// Power button
 	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
@@ -610,8 +612,9 @@ void power_off()
 
 	g_lcd_do_sleep = true;
 
-	g_internal_power_on = false;
-	g_internal_real_power_off_delay = 30;
+	g_raspberry_power_on = false;
+	//g_raspberry_send_power_off_delay = 30;
+	g_raspberry_real_power_off_delay = 40;
 
 	g_amplifier_power_on = false;
 	g_amplifier_real_power_off_delay = 2;
@@ -621,7 +624,7 @@ void power_on()
 {
 	// Power up raspberry pi
 	digitalWrite(PIN_INTERNAL_POWER_OFF, LOW);
-	g_internal_power_on = true;
+	g_raspberry_power_on = true;
 
 	g_lcd_do_sleep = false;
 
@@ -652,9 +655,17 @@ void loop()
 	if(g_second_counter_timestamp < millis() - 1000 || g_second_counter_timestamp > millis()){
 		g_second_counter_timestamp = millis();
 
-		if(!g_internal_power_on && g_internal_real_power_off_delay > 0){
-			g_internal_real_power_off_delay--;
-			if(g_internal_real_power_off_delay == 0){
+		/*if(!g_raspberry_power_on && g_raspberry_send_power_off_delay > 0){
+			g_raspberry_send_power_off_delay--;
+			if(g_raspberry_send_power_off_delay == 0){
+				// Tell raspberry pi to power down
+				Serial.println("<POWERDOWN");
+			}
+		}*/
+
+		if(!g_raspberry_power_on && g_raspberry_real_power_off_delay > 0){
+			g_raspberry_real_power_off_delay--;
+			if(g_raspberry_real_power_off_delay == 0){
 				// Power down raspberry pi
 				digitalWrite(PIN_INTERNAL_POWER_OFF, HIGH);
 			}
