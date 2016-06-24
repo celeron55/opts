@@ -72,7 +72,6 @@ struct Mode {
 	const char *name;
 	void (*update)();
 	void (*handle_keys)();
-	void (*handle_encoder)(int8_t rot);
 };
 
 void power_off_update();
@@ -81,27 +80,22 @@ Mode g_mode_power_off = {
 	"POWER_OFF",
 	power_off_update,
 	power_off_handle_keys,
-	NULL,
 };
 
 void aux_update();
 void aux_handle_keys();
-void aux_handle_encoder(int8_t rot);
 Mode g_mode_aux = {
 	"AUX",
 	aux_update,
 	aux_handle_keys,
-	aux_handle_encoder,
 };
 
 void internal_update();
 void internal_handle_keys();
-void internal_handle_encoder(int8_t rot);
 Mode g_mode_internal = {
 	"INTERNAL",
 	internal_update,
 	internal_handle_keys,
-	internal_handle_encoder,
 };
 char g_internal_display_text[9] = "INTERNAL";
 
@@ -148,21 +142,6 @@ void aux_handle_keys()
 	}
 }
 
-void aux_handle_encoder(int8_t rot)
-{
-	g_volume_controls.volume += rot;
-	if(g_volume_controls.volume > 80)
-		g_volume_controls.volume = 80;
-	send_volume_update();
-
-	g_temp_display_data_timer = 2000;
-	memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
-	char buf[10] = {0};
-	snprintf(buf, 10, "VOL %i    ", g_volume_controls.volume);
-	set_segments(g_display_data, 0, buf);
-	set_all_segments(g_temp_display_data, buf);
-}
-
 void internal_update()
 {
 	while(command_accumulator.read(Serial)){
@@ -204,24 +183,6 @@ void internal_handle_keys()
 			Serial.println(i);
 		}
 	}
-}
-
-void internal_handle_encoder(int8_t rot)
-{
-	/*Serial.print(F("<ENC:"));
-	Serial.println(rot);*/
-
-	g_volume_controls.volume += rot;
-	if(g_volume_controls.volume > 80)
-		g_volume_controls.volume = 80;
-	send_volume_update();
-
-	g_temp_display_data_timer = 2000;
-	memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
-	char buf[10] = {0};
-	snprintf(buf, 10, "VOL %i    ", g_volume_controls.volume);
-	set_segments(g_display_data, 0, buf);
-	set_all_segments(g_temp_display_data, buf);
 }
 
 void init_io()
@@ -436,6 +397,21 @@ void send_volume_update()
 	vol_send_data(data);
 }
 
+void handle_encoder_value(int8_t rot)
+{
+	g_volume_controls.volume += rot;
+	if(g_volume_controls.volume > 80)
+		g_volume_controls.volume = 80;
+	send_volume_update();
+
+	g_temp_display_data_timer = 1000;
+	memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+	char buf[10] = {0};
+	snprintf(buf, 10, "VOL %i    ", g_volume_controls.volume);
+	set_segments(g_display_data, 0, buf);
+	set_all_segments(g_temp_display_data, buf);
+}
+
 void handle_encoder()
 {
 	bool e1 = digitalRead(PIN_ENCODER1);
@@ -500,9 +476,8 @@ void handle_encoder()
 		uint8_t a = g_debug_test_segment_i;
 		memset(g_display_data, 0, sizeof g_display_data);
 		g_display_data[a/8] = 1 << (a % 8);*/
-	
-		if(g_current_mode && g_current_mode->handle_encoder)
-			(*g_current_mode->handle_encoder)(rot);
+
+		handle_encoder_value(rot);
 	}
 
 
@@ -556,8 +531,6 @@ void power_on()
 void setup()
 {
 	init_io();
-
-	//digitalWrite(PIN_LED, HIGH);
 
 	power_on();
 }
