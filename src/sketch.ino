@@ -13,7 +13,7 @@ const int PIN_VOL_CE = 11;
 const int PIN_VOL_DI = 12;
 const int PIN_VOL_CL = 13;
 const int PIN_STANDBY_DISABLE = 5;
-const int PIN_INTERNAL_POWER_OFF = 2;
+const int PIN_RASPBERRY_POWER_OFF = 2;
 //const int PIN_IGNITION_INPUT = ?; // TODO
 
 uint8_t g_encoder_last_state = 0xff;
@@ -60,8 +60,8 @@ uint16_t g_temp_display_data_timer = 0; // milliseconds; counts down
 enum ControlMode {
 	CM_POWER_OFF,
 	CM_AUX,
-	CM_INTERNAL,
-} g_control_mode = CM_INTERNAL;
+	CM_RASPBERRY,
+} g_control_mode = CM_RASPBERRY;
 
 struct VolumeControls {
 	uint8_t fader = 15; // 0...15 (-infdB...0dB)
@@ -106,11 +106,11 @@ Mode g_mode_aux = {
 void raspberry_update();
 void raspberry_handle_keys();
 Mode g_mode_raspberry = {
-	"INTERNAL",
+	"RASPBERRY",
 	raspberry_update,
 	raspberry_handle_keys,
 };
-char g_raspberry_display_text[9] = "INTERNAL";
+char g_raspberry_display_text[9] = "RASPBERR";
 
 Mode *g_current_mode = &g_mode_raspberry;
 
@@ -219,7 +219,7 @@ void init_io()
 	pinMode(PIN_VOL_CL, OUTPUT);
 
 	pinMode(PIN_STANDBY_DISABLE, OUTPUT);
-	pinMode(PIN_INTERNAL_POWER_OFF, OUTPUT);
+	pinMode(PIN_RASPBERRY_POWER_OFF, OUTPUT);
 }
 
 // Bits are sent LSB first
@@ -623,7 +623,7 @@ void power_off()
 void power_on()
 {
 	// Power up raspberry pi
-	digitalWrite(PIN_INTERNAL_POWER_OFF, LOW);
+	digitalWrite(PIN_RASPBERRY_POWER_OFF, LOW);
 	g_raspberry_power_on = true;
 
 	g_lcd_do_sleep = false;
@@ -667,7 +667,7 @@ void loop()
 			g_raspberry_real_power_off_delay--;
 			if(g_raspberry_real_power_off_delay == 0){
 				// Power down raspberry pi
-				digitalWrite(PIN_INTERNAL_POWER_OFF, HIGH);
+				digitalWrite(PIN_RASPBERRY_POWER_OFF, HIGH);
 			}
 		}
 
