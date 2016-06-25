@@ -213,8 +213,21 @@ void handle_control_playpause()
 	mpv_get_property(mpv, "idle", MPV_FORMAT_FLAG, &idle);
 
 	if(!idle){
+		int was_pause = 0;
+		mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &was_pause);
+
 		// Some kind of track is loaded; toggle playback
 		check_mpv_error(mpv_command_string(mpv, "pause"));
+
+		if(!was_pause){
+			char buf[30];
+			int l = snprintf(buf, 30, ">SET_TEMP_TEXT:PAUSE\r\n");
+			write(arduino_serial_fd, buf, l);
+		} else {
+			char buf[30];
+			int l = snprintf(buf, 30, ">SET_TEMP_TEXT:RESUME\r\n");
+			write(arduino_serial_fd, buf, l);
+		}
 	} else {
 		// No track is loaded; load from cursor
 		force_start_current_track();
