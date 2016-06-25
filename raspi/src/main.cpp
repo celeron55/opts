@@ -235,10 +235,12 @@ void refresh_track()
 	//printf("Currently playing: %s\n", playing_path);
 
 	Track track = get_track(current_media_content, current_cursor);
-	if(playing_path == NULL || ss_(playing_path) != track.path){
-		printf("Playing path does not match current track; Switching track.\n");
-		const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
-		check_mpv_error(mpv_command(mpv, cmd));
+	if(track.path != ""){
+		if(playing_path == NULL || ss_(playing_path) != track.path){
+			printf("Playing path does not match current track; Switching track.\n");
+			const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
+			check_mpv_error(mpv_command(mpv, cmd));
+		}
 	}
 }
 
