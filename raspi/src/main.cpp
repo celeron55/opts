@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-ss_ arduino_serial_path;
+sv_<ss_> arduino_serial_paths;
 ss_ test_file_path;
 sv_<ss_> track_devices;
 
@@ -171,7 +171,7 @@ static inline void check_mpv_error(int status)
     }
 }
 
-ss_ read_any(int fd)
+ss_ read_any(int fd, bool *dst_error=NULL)
 {
 	struct pollfd fds;
 	int ret;
@@ -188,6 +188,8 @@ ss_ read_any(int fd)
 		return "";
 	} else {
 		// Error
+		if(dst_error)
+			*dst_error = true;
 		return "";
 	}
 }
@@ -370,11 +372,43 @@ void handle_key_release(int key)
 {
 }
 
+void try_open_arduino_serial()
+{
+	for(const ss_ &arduino_serial_path : arduino_serial_paths){
+		arduino_serial_fd = open(arduino_serial_path.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
+		if(arduino_serial_fd < 0){
+			printf("Failed to open %s\n", cs(arduino_serial_path));
+			arduino_serial_fd = -1;
+			continue;
+		}
+		if(!set_interface_attribs(arduino_serial_fd, 9600, 0)){
+			printf("Failed to set attributes for serial fd\n");
+			continue;
+		}
+		printf("Opened arduino serial port %s\n", cs(arduino_serial_path));
+		return;
+	}
+}
+
 void handle_hwcontrols()
 {
-	if(arduino_serial_fd == -1)
+	if(arduino_serial_fd == -1){
+		static time_t last_retry_time = 0;
+		if(last_retry_time < time(0) - 5){
+			last_retry_time = time(0);
+			printf("Retrying arduino serial\n");
+			try_open_arduino_serial();
+		}
+		if(arduino_serial_fd == -1){
+			return;
+		}
+	}
+	bool error = false;
+	ss_ serial_stuff = read_any(arduino_serial_fd, &error);
+	if(error){
+		arduino_serial_fd = -1;
 		return;
-	ss_ serial_stuff = read_any(arduino_serial_fd);
+	}
 	for(char c : serial_stuff){
 		if(arduino_message_accu.put_char(c)){
 			ss_ message = arduino_message_accu.command();
@@ -669,7 +703,7 @@ int main(int argc, char *argv[])
 	const char usagefmt[1000] =
 			"Usage: %s [OPTION]...\n"
 			"  -h                   Show this help\n"
-			"  -s [path]            Serial port device of Arduino\n"
+			"  -s [path]            Serial port device of Arduino (pass multiple -s to specify many)\n"
 			"  -t [path]            Test file path\n"
 			"  -d [dev1,dev2,...]   Block devices to track and mount (eg. sdc)\n"
 			;
@@ -683,7 +717,7 @@ int main(int argc, char *argv[])
 			printf(usagefmt, argv[0]);
 			return 1;
 		case 's':
-			arduino_serial_path = c55_optarg;
+			arduino_serial_paths.push_back(c55_optarg);
 			break;
 		case 't':
 			test_file_path = c55_optarg;
@@ -708,16 +742,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if(arduino_serial_path != ""){
-		arduino_serial_fd = open(arduino_serial_path.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
-		if(arduino_serial_fd < 0){
-			printf("Failed to open %s\n", cs(arduino_serial_path));
-			return 1;
-		}
-		if(!set_interface_attribs(arduino_serial_fd, 9600, 0)){
-			return 1;
-		}
-	}
+	try_open_arduino_serial();
 
 	partitions_watch.reset(createFileWatch());
 	partitions_watch->add("/dev/disk", [](const ss_ &path){
