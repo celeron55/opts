@@ -438,7 +438,7 @@ void handle_mpv()
 		mpv_event *event = mpv_wait_event(mpv, 0);
 		if(event->event_id == MPV_EVENT_NONE)
 			break;
-		printf("MPV: %s\n", mpv_event_name(event->event_id));
+		//printf("MPV: %s\n", mpv_event_name(event->event_id));
 		if(event->event_id == MPV_EVENT_SHUTDOWN){
 			do_main_loop = false;
 		}
