@@ -21,6 +21,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+ss_ saved_state_path = "saved_state";
+
 sv_<ss_> arduino_serial_paths;
 ss_ test_file_path;
 sv_<ss_> track_devices;
@@ -75,6 +77,42 @@ struct PlayCursor
 PlayCursor current_cursor;
 PlayCursor last_succesfully_playing_cursor;
 bool queued_seek_to_cursor = false;
+
+time_t last_save_timestamp = 0;
+
+void save_stuff()
+{
+	last_save_timestamp = time(0);
+
+	printf("Saving stuff\n");
+
+	ss_ save_blob;
+	save_blob += itos(last_succesfully_playing_cursor.album_i) + ";";
+	save_blob += itos(last_succesfully_playing_cursor.track_i) + ";";
+	save_blob += ftos(last_succesfully_playing_cursor.time_pos) + ";";
+	std::ofstream f(saved_state_path.c_str(), std::ios::binary);
+	f<<save_blob;
+}
+
+void load_stuff()
+{
+	ss_ data;
+	{
+		std::ifstream f(saved_state_path.c_str());
+		if(!f.good()){
+			printf("No saved state at %s\n", cs(saved_state_path));
+			return;
+		}
+		printf("Found saved state at %s\n", cs(saved_state_path));
+		data = ss_((std::istreambuf_iterator<char>(f)),
+				std::istreambuf_iterator<char>());
+	}
+	Strfnd f(data);
+	last_succesfully_playing_cursor.album_i = stoi(f.next(";"), 0);
+	last_succesfully_playing_cursor.track_i = stoi(f.next(";"), 0);
+	last_succesfully_playing_cursor.time_pos = stof(f.next(";"), 0.0);
+	current_cursor = last_succesfully_playing_cursor;
+}
 
 Track get_track(const MediaContent &mc, const PlayCursor &cursor)
 {
@@ -439,6 +477,9 @@ void handle_hwcontrols()
 			} else if(first == "<BOOT"){
 				temp_display_album();
 				refresh_track();
+			} else if(first == "<POWERDOWN_WARNING"){
+				printf("<POWERDOWN_WARNING\n");
+				save_stuff();
 			} else {
 				printf("%s (ignored)\n", cs(message));
 			}
@@ -816,6 +857,19 @@ void handle_mount()
 	}
 }
 
+void handle_periodic_save()
+{
+	// If there is a non-clean shutdown, this should save us
+	if(last_save_timestamp == 0){
+		last_save_timestamp = time(0);
+		return;
+	}
+	if(last_save_timestamp > time(0) - 60){
+		return;
+	}
+	save_stuff();
+}
+
 int main(int argc, char *argv[])
 {
 	const char opts[100] = "hs:t:d:";
@@ -861,6 +915,8 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	load_stuff();
+
 	try_open_arduino_serial();
 
 	partitions_watch.reset(createFileWatch());
@@ -888,6 +944,8 @@ int main(int argc, char *argv[])
 		handle_mpv();
 
 		handle_mount();
+
+		handle_periodic_save();
 
 		usleep(1000000/60);
 	}

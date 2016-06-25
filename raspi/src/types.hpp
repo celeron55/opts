@@ -99,6 +99,17 @@ static inline ss_ ftos(float f){
 	return buf;
 }
 
+static inline int stoi(const ss_ &s, int default_v){
+	if(s.size() == 0 || (s[0] != '-' && s[0] < '0' && s[0] > '9'))
+		return default_v;
+	return atoi(s.c_str());
+}
+static inline double stof(const ss_ &s, double default_v){
+	if(s.size() == 0 || (s[0] != '-' && s[0] < '0' && s[0] > '9'))
+		return default_v;
+	return atof(s.c_str());
+}
+
 #define SLEN(x) (sizeof(x)/sizeof((x)[0]))
 
 template<typename T>
