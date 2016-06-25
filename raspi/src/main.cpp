@@ -69,10 +69,12 @@ struct PlayCursor
 {
 	int album_i = 0;
 	int track_i = 0;
+	double time_pos = 0;
 };
 
 PlayCursor current_cursor;
 PlayCursor last_succesfully_playing_cursor;
+bool queued_seek_to_cursor = false;
 
 Track get_track(const MediaContent &mc, const PlayCursor &cursor)
 {
@@ -141,7 +143,8 @@ ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
 		return "No media";
 
 	return ss_()+"Album "+itos(cursor.album_i)+" ("+get_album_name(mc, cursor)+
-			"), track "+itos(cursor.track_i)+" ("+get_track_name(mc, cursor)+")";
+			"), track "+itos(cursor.track_i)+" ("+get_track_name(mc, cursor)+")"+
+			", pos "+ftos(cursor.time_pos)+"s";
 }
 
 size_t get_total_tracks(const MediaContent &mc)
@@ -190,7 +193,7 @@ void handle_control_play_test_file()
 	check_mpv_error(mpv_command(mpv, cmd));
 }
 
-void force_start_current_track()
+void force_start_at_cursor()
 {
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	Track track = get_track(current_media_content, current_cursor);
@@ -199,6 +202,8 @@ void force_start_current_track()
 
 	void refresh_track();
 	refresh_track();
+
+	queued_seek_to_cursor = true;
 }
 
 void handle_control_playpause()
@@ -220,7 +225,7 @@ void handle_control_playpause()
 		}
 	} else {
 		// No track is loaded; load from cursor
-		force_start_current_track();
+		force_start_at_cursor();
 	}
 }
 
@@ -267,11 +272,15 @@ void temp_display_album()
 		return;
 
 	arduino_set_temp_text(squeeze(get_album_name(current_media_content, current_cursor), 8));
+
+	// Delay track scroll for one second
+	display_update_timestamp = time(0) + 1;
 }
 
 void handle_control_next()
 {
 	current_cursor.track_i++;
+	current_cursor.time_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	refresh_track();
@@ -280,6 +289,7 @@ void handle_control_next()
 void handle_control_prev()
 {
 	current_cursor.track_i--;
+	current_cursor.time_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	refresh_track();
@@ -289,6 +299,7 @@ void handle_control_nextalbum()
 {
 	current_cursor.album_i++;
 	current_cursor.track_i = 0;
+	current_cursor.time_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
 
 	temp_display_album();
@@ -301,6 +312,7 @@ void handle_control_prevalbum()
 {
 	current_cursor.album_i--;
 	current_cursor.track_i = 0;
+	current_cursor.time_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
 
 	temp_display_album();
@@ -451,15 +463,15 @@ void update_display()
 			display_next_startpos = 0;
 			squeezed = squeeze(track_name, 20, display_next_startpos);
 		}
-		squeezed = squeeze(squeezed, 20);
+		if(squeezed.size() >= 8)
+			squeezed = squeeze(squeezed, 20);
 		arduino_set_text(squeezed);
 	}
 }
 
 void handle_display()
 {
-	time_t seconds_per_update = 1;
-	if(display_update_timestamp > time(0) - seconds_per_update)
+	if(display_update_timestamp > time(0) - 1)
 		return;
 	update_display();
 	display_next_startpos += 8;
@@ -481,12 +493,26 @@ void handle_mpv()
 			printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			refresh_track();
 		}
+		if(event->event_id == MPV_EVENT_START_FILE){
+			if(queued_seek_to_cursor){
+				queued_seek_to_cursor = false;
+				double time_pos = current_cursor.time_pos;
+				printf("Executing queued seek-to-cursor (%fs)\n", time_pos);
+				mpv_command_string(mpv, cs("seek "+itos(time_pos)+" absolute"));
+			}
+		}
 	}
 
-	double time_pos = 0.0;
-	mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &time_pos);
-	if(time_pos >= 1.0){
-		last_succesfully_playing_cursor = current_cursor;
+	static time_t last_time_pos_get_timestamp = 0;
+	if(last_time_pos_get_timestamp != time(0)){
+		last_time_pos_get_timestamp = time(0);
+
+		double time_pos = 0;
+		mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &time_pos);
+		if(time_pos >= 2){
+			current_cursor.time_pos = time_pos;
+			last_succesfully_playing_cursor = current_cursor;
+		}
 	}
 }
 
@@ -565,7 +591,7 @@ void scan_current_mount()
 
 	temp_display_album();
 	current_cursor = last_succesfully_playing_cursor;
-	force_start_current_track();
+	force_start_at_cursor();
 }
 
 bool check_partition_exists(const ss_ &devname0)
@@ -642,7 +668,7 @@ void handle_changed_partitions()
 	if(current_mount_device != ""){
 		if(!check_partition_exists(current_mount_device)){
 			static time_t umount_last_failed_timestamp = 0;
-			if(umount_last_failed_timestamp > time(0) - 30){
+			if(umount_last_failed_timestamp > time(0) - 15){
 				// Stop flooding these dumb commands
 			} else {
 				// Unmount it if the partition doesn't exist anymore
@@ -744,11 +770,19 @@ void handle_changed_partitions()
 	}
 }
 
+bool partitions_changed = false;
+
 void handle_mount()
 {
 	// Calls callbacks; eg. handle_changed_partitions()
 	for(auto fd : partitions_watch->get_fds()){
 		partitions_watch->report_fd(fd);
+	}
+
+	if(partitions_changed){
+		partitions_changed = false;
+		printf("Partitions changed\n");
+		handle_changed_partitions();
 	}
 
 	// Add watched paths after a delay because these paths don't necessarily
@@ -763,20 +797,17 @@ void handle_mount()
 		// while others work on other systems
 		try {
 			partitions_watch->add("/dev/disk", [](const ss_ &path){
-				printf("Partitions changed (%s)\n", cs(path));
-				handle_changed_partitions();
+				partitions_changed = true;
 			});
 		} catch(Exception &e){}
 		try {
 			partitions_watch->add("/dev/disk/by-path", [](const ss_ &path){
-				printf("Partitions changed (%s)\n", cs(path));
-				handle_changed_partitions();
+				partitions_changed = true;
 			});
 		} catch(Exception &e){}
 		try {
 			partitions_watch->add("/dev/disk/by-uuid", [](const ss_ &path){
-				printf("Partitions changed (%s)\n", cs(path));
-				handle_changed_partitions();
+				partitions_changed = true;
 			});
 		} catch(Exception &e){}
 
