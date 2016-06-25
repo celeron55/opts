@@ -220,6 +220,9 @@ void force_start_current_track()
 	Track track = get_track(current_media_content, current_cursor);
 	const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
 	check_mpv_error(mpv_command(mpv, cmd));
+
+	void refresh_track();
+	refresh_track();
 }
 
 void handle_control_playpause()
