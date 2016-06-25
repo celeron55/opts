@@ -11,13 +11,13 @@ static ss_ truncate(const ss_ &s, size_t len)
 	return s.substr(0, len);
 }
 
-static ss_ squeeze(const ss_ &s0, size_t len, size_t startpos=0)
+static ss_ squeeze(const ss_ &s0, size_t len, size_t startpos=0, size_t try_len=8)
 {
 	ss_ s = s0;
 	for(size_t i=0; i<s.size(); i++)
 		s[i] = toupper(s[i]);
 
-	if(s.size() > len){
+	if(s.size() > try_len){
 		size_t good_beginning = 0;
 		for(size_t i=0; i<s.size(); i++){
 			if((s[i] < 'a' || s[i] > 'z') && (s[i] < 'A' || s[i] > 'Z')){
