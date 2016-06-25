@@ -129,6 +129,9 @@ ss_ get_track_name(const MediaContent &mc, const PlayCursor &cursor)
 
 ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
 {
+	if(current_media_content.albums.empty())
+		return "No media";
+
 	return ss_()+"Album "+itos(cursor.album_i)+" ("+get_album_name(mc, cursor)+
 			"), track "+itos(cursor.track_i)+" ("+get_track_name(mc, cursor)+")";
 }
@@ -238,6 +241,16 @@ void handle_control_playpause()
 
 void refresh_track()
 {
+	if(current_media_content.albums.empty()){
+		// Update display
+		char buf[30];
+		int l = snprintf(buf, 30, ">SET_TEXT:NO MEDIA\r\n");
+		write(arduino_serial_fd, buf, l);
+
+		// Skip everything else
+		return;
+	}
+
 	// Update display
 	char buf[30];
 	int l = snprintf(buf, 30, ">SET_TEXT:%s\r\n",
@@ -261,6 +274,9 @@ void refresh_track()
 
 void temp_display_album()
 {
+	if(current_media_content.albums.empty())
+		return;
+
 	char buf[30];
 	int l = snprintf(buf, 30, ">SET_TEMP_TEXT:%s\r\n",
 			cs(squeeze(get_album_name(current_media_content, current_cursor), 8)));
@@ -454,11 +470,18 @@ void handle_mpv()
 bool filename_supported(const ss_ &name)
 {
 	// Not all of these are even actually supported but at least nothing
-	// ridiculous is included
+	// ridiculous is included so that browsing random USB storage things is
+	// possible
 	static set_<ss_> supported_file_extensions = {
-		"aac", "cue", "d64", "flac", "it", "m3u", "m4a", "mid", "mod", "mp3",
-		"mp4", "ogg", "pls", "rar", "s3m", "sfv", "sid", "spc", "swf", "t64",
-		"wav", "xd", "xm",
+		"3ga", "aac", "aif", "aifc", "aiff", "amr", "au", "aup", "caf", "flac",
+		"gsm", "iff", "kar", "m4a", "m4p", "m4r", "mid", "midi", "mmf", "mp2",
+		"mp3", "mpga", "ogg", "oma", "opus", "qcp", "ra", "ram", "wav", "wma",
+		"xspf", "3g2", "3gp", "3gpp", "asf", "avi", "divx", "f4v", "flv",
+		"h264", "ifo", "m2ts", "m4v", "mkv", "mod", "mov", "mp4", "mpeg",
+		"mpg", "mswmm", "mts", "mxf", "ogv", "rm", "srt", "swf", "ts", "vep",
+		"vob", "webm", "wlmp", "wmv", "aac", "cue", "d64", "flac", "it",
+		"m3u", "m4a", "mid", "mod", "mp3", "mp4", "ogg", "pls", "rar", "s3m",
+		"sfv", "sid", "spc", "swf", "t64", "wav", "xd", "xm",
 	};
 
 	// Check file extension
