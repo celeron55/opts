@@ -77,6 +77,7 @@ struct PlayCursor
 PlayCursor current_cursor;
 PlayCursor last_succesfully_playing_cursor;
 bool queued_seek_to_cursor = false;
+bool queued_pause = false;
 
 time_t last_save_timestamp = 0;
 
@@ -84,12 +85,16 @@ void save_stuff()
 {
 	last_save_timestamp = time(0);
 
-	printf("Saving stuff\n");
+	printf("Saving stuff to %s\n", cs(saved_state_path));
+
+	int is_paused = 0;
+	mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &is_paused);
 
 	ss_ save_blob;
 	save_blob += itos(last_succesfully_playing_cursor.album_i) + ";";
 	save_blob += itos(last_succesfully_playing_cursor.track_i) + ";";
 	save_blob += ftos(last_succesfully_playing_cursor.time_pos) + ";";
+	save_blob += itos(is_paused) + ";";
 	std::ofstream f(saved_state_path.c_str(), std::ios::binary);
 	f<<save_blob;
 }
@@ -103,7 +108,7 @@ void load_stuff()
 			printf("No saved state at %s\n", cs(saved_state_path));
 			return;
 		}
-		printf("Found saved state at %s\n", cs(saved_state_path));
+		printf("Loading saved state from %s\n", cs(saved_state_path));
 		data = ss_((std::istreambuf_iterator<char>(f)),
 				std::istreambuf_iterator<char>());
 	}
@@ -111,6 +116,7 @@ void load_stuff()
 	last_succesfully_playing_cursor.album_i = stoi(f.next(";"), 0);
 	last_succesfully_playing_cursor.track_i = stoi(f.next(";"), 0);
 	last_succesfully_playing_cursor.time_pos = stof(f.next(";"), 0.0);
+	queued_pause = stoi(f.next(";"), 0);
 	current_cursor = last_succesfully_playing_cursor;
 }
 
@@ -241,7 +247,9 @@ void force_start_at_cursor()
 	void refresh_track();
 	refresh_track();
 
-	queued_seek_to_cursor = true;
+	if(current_cursor.time_pos != 0.0){
+		queued_seek_to_cursor = true;
+	}
 }
 
 void handle_control_playpause()
@@ -526,22 +534,30 @@ void handle_mpv()
 		mpv_event *event = mpv_wait_event(mpv, 0);
 		if(event->event_id == MPV_EVENT_NONE)
 			break;
-		//printf("MPV: %s\n", mpv_event_name(event->event_id));
+		printf("MPV: %s\n", mpv_event_name(event->event_id));
 		if(event->event_id == MPV_EVENT_SHUTDOWN){
 			do_main_loop = false;
 		}
 		if(event->event_id == MPV_EVENT_IDLE){
-			current_cursor.track_i++;
-			cursor_bound_wrap(current_media_content, current_cursor);
-			printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-			refresh_track();
+			if(!queued_seek_to_cursor){
+				current_cursor.track_i++;
+				cursor_bound_wrap(current_media_content, current_cursor);
+				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+				refresh_track();
+			}
 		}
-		if(event->event_id == MPV_EVENT_START_FILE){
+		if(event->event_id == MPV_EVENT_FILE_LOADED){
 			if(queued_seek_to_cursor){
 				queued_seek_to_cursor = false;
 				double time_pos = current_cursor.time_pos;
 				printf("Executing queued seek-to-cursor (%fs)\n", time_pos);
 				mpv_command_string(mpv, cs("seek "+itos(time_pos)+" absolute"));
+			}
+			if(queued_pause){
+				queued_pause = false;
+				printf("Executing queued pause\n");
+				check_mpv_error(mpv_command_string(mpv, "pause"));
+				arduino_set_temp_text("PAUSE");
 			}
 		}
 	}
@@ -634,6 +650,7 @@ void scan_current_mount()
 
 	temp_display_album();
 	current_cursor = last_succesfully_playing_cursor;
+
 	force_start_at_cursor();
 }
 
@@ -874,13 +891,14 @@ void handle_periodic_save()
 
 int main(int argc, char *argv[])
 {
-	const char opts[100] = "hs:t:d:";
+	const char opts[100] = "hs:t:d:S:";
 	const char usagefmt[1000] =
 			"Usage: %s [OPTION]...\n"
 			"  -h                   Show this help\n"
 			"  -s [path]            Serial port device of Arduino (pass multiple -s to specify many)\n"
 			"  -t [path]            Test file path\n"
 			"  -d [dev1,dev2,...]   Block devices to track and mount (eg. sdc)\n"
+			"  -S [path]            Saved state path\n"
 			;
 
 	int c;
@@ -909,6 +927,9 @@ int main(int argc, char *argv[])
 				}
 				printf("\n");
 			}
+			break;
+		case 'S':
+			saved_state_path = c55_optarg;
 			break;
 		default:
 			fprintf(stderr, "Invalid argument\n");
