@@ -1,8 +1,11 @@
+#include "stuff.hpp"
 #include "c55_getopt.h"
 #include "command_accumulator.hpp"
 #include "string_util.hpp"
 #include "file_watch.hpp"
 #include "types.hpp"
+#include "filesys.hpp"
+#include "scope_end_trigger.hpp"
 #include <mpv/client.h>
 #include <fstream>
 #include <sys/poll.h>
@@ -31,6 +34,134 @@ up_<FileWatch> partitions_watch;
 
 ss_ current_mount_device;
 ss_ current_mount_path;
+
+struct Track
+{
+	ss_ path;
+	ss_ display_name;
+
+	Track(const ss_ &path="", const ss_ &display_name=""):
+		path(path), display_name(display_name)
+	{}
+};
+
+struct Album
+{
+	ss_ name;
+	sv_<Track> tracks;
+};
+
+struct MediaContent
+{
+	sv_<Album> albums;
+};
+
+MediaContent current_media_content;
+
+struct PlayCursor
+{
+	int album_i = 0;
+	int track_i = 0;
+};
+
+PlayCursor current_cursor;
+
+Track get_track(const MediaContent &mc, const PlayCursor &cursor)
+{
+	if(cursor.album_i >= (int)mc.albums.size()){
+		printf("Album cursor overflow\n");
+		return Track();
+	}
+	const Album &album = mc.albums[cursor.album_i];
+	if(cursor.track_i >= (int)album.tracks.size()){
+		printf("Track cursor overflow\n");
+		return Track();
+	}
+	return album.tracks[cursor.track_i];
+}
+
+void cursor_bound_wrap(const MediaContent &mc, PlayCursor &cursor)
+{
+	if(mc.albums.empty())
+		return;
+	if(cursor.album_i < 0)
+		cursor.album_i = mc.albums.size() - 1;
+	if(cursor.album_i >= (int)mc.albums.size())
+		cursor.album_i = 0;
+	const Album &album = mc.albums[cursor.album_i];
+	if(cursor.track_i < 0){
+		cursor.album_i--;
+		if(cursor.album_i < 0)
+			cursor.album_i = mc.albums.size() - 1;
+		const Album &album2 = mc.albums[cursor.album_i];
+		cursor.track_i = album2.tracks.size() - 1;
+	} else if(cursor.track_i >= (int)album.tracks.size()){
+		cursor.track_i = 0;
+		cursor.album_i++;
+		if(cursor.album_i >= (int)mc.albums.size())
+			cursor.album_i = 0;
+	}
+}
+
+ss_ get_album_name(const MediaContent &mc, const PlayCursor &cursor)
+{
+	if(cursor.album_i >= (int)mc.albums.size()){
+		printf("Album cursor overflow\n");
+		return "ERR:AOVF";
+	}
+	const Album &album = mc.albums[cursor.album_i];
+	return album.name;
+}
+
+ss_ get_track_name(const MediaContent &mc, const PlayCursor &cursor)
+{
+	if(cursor.album_i >= (int)mc.albums.size()){
+		printf("Album cursor overflow\n");
+		return "ERR:AOVF";
+	}
+	const Album &album = mc.albums[cursor.album_i];
+	if(cursor.track_i >= (int)album.tracks.size()){
+		printf("Track cursor overflow\n");
+		return "ERR:TOVF";
+	}
+	return album.tracks[cursor.track_i].display_name;
+}
+
+ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
+{
+	return ss_()+"Album "+itos(cursor.album_i)+" ("+get_album_name(mc, cursor)+
+			"), track "+itos(cursor.track_i)+" ("+get_track_name(mc, cursor)+")";
+}
+
+ss_ truncate(const ss_ &s, size_t len)
+{
+	if(s.size() < len) return s;
+	return s.substr(0, len);
+}
+
+ss_ squeeze(const ss_ &s0, size_t len)
+{
+	ss_ s = s0;
+	for(size_t i=0; i<s.size(); i++)
+		s[i] = toupper(s[i]);
+
+	if(s.size() < len) return s;
+
+	size_t good_beginning = 0;
+	for(size_t i=0; i<s.size(); i++){
+		if((s[i] < 'a' || s[i] > 'z') && (s[i] < 'A' || s[i] > 'Z')){
+			good_beginning = i;
+		} else {
+			good_beginning = i;
+			break;
+		}
+	}
+	if(good_beginning < s.size() - 2){
+		s = s.substr(good_beginning);
+	}
+
+	return s.substr(0, len);
+}
 
 static inline void check_mpv_error(int status)
 {
@@ -61,44 +192,6 @@ ss_ read_any(int fd)
 	}
 }
 
-bool set_interface_attribs(int fd, int speed, int parity)
-{
-	struct termios tty;
-	memset(&tty, 0, sizeof tty);
-	if(tcgetattr(fd, &tty) != 0){
-		printf("Error %d from tcgetattr\n", errno);
-		return false;
-	}
-
-	cfsetospeed(&tty, speed);
-	cfsetispeed(&tty, speed);
-
-	tty.c_cflag =(tty.c_cflag & ~CSIZE) | CS8;     // 8-bit chars
-	// disable IGNBRK for mismatched speed tests; otherwise receive break
-	// as \000 chars
-	tty.c_iflag &= ~IGNBRK;	 // disable break processing
-	tty.c_lflag = 0;		// no signaling chars, no echo,
-					// no canonical processing
-	tty.c_oflag = 0;		// no remapping, no delays
-	tty.c_cc[VMIN]  = 0;	    // read doesn't block
-	tty.c_cc[VTIME] = 5;	    // 0.5 seconds read timeout
-
-	tty.c_iflag &= ~(IXON | IXOFF | IXANY); // shut off xon/xoff ctrl
-
-	tty.c_cflag |=(CLOCAL | CREAD);// ignore modem controls,
-					// enable reading
-	tty.c_cflag &= ~(PARENB | PARODD);      // shut off parity
-	tty.c_cflag |= parity;
-	tty.c_cflag &= ~CSTOPB;
-	tty.c_cflag &= ~CRTSCTS;
-
-	if(tcsetattr(fd, TCSANOW, &tty) != 0){
-		printf("Error %d from tcsetattr\n", errno);
-		return false;
-	}
-	return true;
-}
-
 void handle_control_play_test_file()
 {
 	printf("Playing test file \"%s\"\n", cs(test_file_path));
@@ -106,20 +199,95 @@ void handle_control_play_test_file()
 	check_mpv_error(mpv_command(mpv, cmd));
 }
 
+void force_start_current_track()
+{
+	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+	Track track = get_track(current_media_content, current_cursor);
+	const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
+	check_mpv_error(mpv_command(mpv, cmd));
+}
+
+void handle_control_playpause()
+{
+	int idle = 0;
+	mpv_get_property(mpv, "idle", MPV_FORMAT_FLAG, &idle);
+
+	if(!idle){
+		// Some kind of track is loaded; toggle playback
+		check_mpv_error(mpv_command_string(mpv, "pause"));
+	} else {
+		// No track is loaded; load from cursor
+		force_start_current_track();
+	}
+}
+
+void refresh_track()
+{
+	// Update display
+	char buf[30];
+	int l = snprintf(buf, 30, ">SET_TEXT:%s\r\n",
+			cs(squeeze(get_track_name(current_media_content, current_cursor), 8)));
+	write(arduino_serial_fd, buf, l);
+
+	char *playing_path = NULL;
+	ScopeEndTrigger set([&](){ mpv_free(playing_path); });
+	mpv_get_property(mpv, "path", MPV_FORMAT_STRING, &playing_path);
+	//printf("Currently playing: %s\n", playing_path);
+
+	Track track = get_track(current_media_content, current_cursor);
+	if(playing_path == NULL || ss_(playing_path) != track.path){
+		printf("Playing path does not match current track; Switching track.\n");
+		const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
+		check_mpv_error(mpv_command(mpv, cmd));
+	}
+}
+
+void temp_display_album()
+{
+	char buf[30];
+	int l = snprintf(buf, 30, ">SET_TEMP_TEXT:%s\r\n",
+			cs(squeeze(get_album_name(current_media_content, current_cursor), 8)));
+	write(arduino_serial_fd, buf, l);
+}
+
 void handle_control_next()
 {
+	current_cursor.track_i++;
+	cursor_bound_wrap(current_media_content, current_cursor);
+	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+	refresh_track();
 }
 
 void handle_control_prev()
 {
+	current_cursor.track_i--;
+	cursor_bound_wrap(current_media_content, current_cursor);
+	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+	refresh_track();
 }
 
 void handle_control_nextalbum()
 {
+	current_cursor.album_i++;
+	current_cursor.track_i = 0;
+	cursor_bound_wrap(current_media_content, current_cursor);
+
+	temp_display_album();
+
+	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+	refresh_track();
 }
 
 void handle_control_prevalbum()
 {
+	current_cursor.album_i--;
+	current_cursor.track_i = 0;
+	cursor_bound_wrap(current_media_content, current_cursor);
+
+	temp_display_album();
+
+	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+	refresh_track();
 }
 
 void handle_stdin()
@@ -137,7 +305,7 @@ void handle_stdin()
 			} else if(command == "prevalbum"){
 				handle_control_prevalbum();
 			} else if(command == "pause"){
-				check_mpv_error(mpv_command_string(mpv, "pause"));
+				handle_control_playpause();
 			} else if(command == "fwd"){
 				mpv_command_string(mpv, "seek +30");
 			} else if(command == "bwd"){
@@ -159,6 +327,26 @@ void handle_key_press(int key)
 {
 	if(key == 21){
 		handle_control_play_test_file();
+		return;
+	}
+	if(key == 24){
+		handle_control_playpause();
+		return;
+	}
+	if(key == 12){
+		handle_control_next();
+		return;
+	}
+	if(key == 27){
+		handle_control_prev();
+		return;
+	}
+	if(key == 23){
+		handle_control_nextalbum();
+		return;
+	}
+	if(key == 29){
+		handle_control_prevalbum();
 		return;
 	}
 }
@@ -185,6 +373,9 @@ void handle_hwcontrols()
 				int key = stoi(f.next(":"));
 				printf("<KEY_RELEASE: %i\n", key);
 				handle_key_release(key);
+			} else if(first == "<BOOT"){
+				temp_display_album();
+				refresh_track();
 			} else {
 				printf("%s (ignored)\n", cs(message));
 			}
@@ -202,7 +393,82 @@ void handle_mpv()
 		if(event->event_id == MPV_EVENT_SHUTDOWN){
 			do_main_loop = false;
 		}
+		if(event->event_id == MPV_EVENT_IDLE){
+			current_cursor.track_i++;
+			cursor_bound_wrap(current_media_content, current_cursor);
+			printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+			refresh_track();
+		}
 	}
+}
+
+bool filename_supported(const ss_ &name)
+{
+	// Not all of these are even actually supported but at least nothing
+	// ridiculous is included
+	static set_<ss_> supported_file_extensions = {
+		"aac", "cue", "d64", "flac", "it", "m3u", "m4a", "mid", "mod", "mp3",
+		"mp4", "ogg", "pls", "rar", "s3m", "sfv", "sid", "spc", "swf", "t64",
+		"wav", "xd", "xm",
+	};
+
+	// Check file extension
+	ss_ ext;
+	for(int i=name.size()-1; i>=0; i--){
+		if(name[i] == '.'){
+			ext = name.substr(i+1);
+			for(size_t i=0; i<ext.size(); i++)
+				ext[i] = tolower(ext[i]);
+			break;
+		}
+	}
+	return supported_file_extensions.count(ext);
+}
+
+void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_albums)
+{
+	DirLister dl(path.c_str());
+
+	Album root_album;
+	root_album.name = root_name;
+
+	for(;;){
+		int ftype;
+		char fname[PATH_MAX];
+		if(!dl.get_next(&ftype, fname, PATH_MAX))
+			break;
+		if(fname[0] == '.')
+			continue;
+		if(ftype == FS_FILE){
+			if(!filename_supported(fname))
+				continue;
+			//printf("File: %s\n", cs(path+"/"+fname));
+			char stripped[100];
+			snprintf(stripped, sizeof stripped, fname);
+			strip_file_extension(stripped);
+			root_album.tracks.push_back(Track(path+"/"+fname, stripped));
+		} else if(ftype == FS_DIR){
+			//printf("Dir: %s\n", cs(path+"/"+fname));
+			scan_directory(fname, path+"/"+fname, result_albums);
+		}
+	}
+
+	if(!root_album.tracks.empty())
+		result_albums.push_back(root_album);
+}
+
+void scan_current_mount()
+{
+	printf("Scanning...\n");
+
+	current_media_content.albums.clear();
+
+	scan_directory("root", current_mount_path, current_media_content.albums);
+
+	printf("Scanned %zu albums.\n", current_media_content.albums.size());
+
+	temp_display_album();
+	force_start_current_track();
 }
 
 bool check_partition_exists(const ss_ &devname0)
@@ -286,6 +552,7 @@ void handle_changed_partitions()
 				printf("umount %s succesful\n", current_mount_path.c_str());
 				current_mount_device = "";
 				current_mount_path = "";
+				current_media_content.albums.clear();
 			} else {
 				printf("umount %s failed: %s\n", current_mount_path.c_str(), strerror(errno));
 			}
@@ -294,6 +561,7 @@ void handle_changed_partitions()
 					cs(current_mount_path));
 			current_mount_device = "";
 			current_mount_path = "";
+			current_media_content.albums.clear();
 		}
 	}
 
@@ -346,6 +614,8 @@ void handle_changed_partitions()
 					cs(devname), cs(existing_mountpoint));
 			current_mount_device = devname;
 			current_mount_path = existing_mountpoint;
+
+			scan_current_mount();
 			return;
 		}
 
@@ -361,6 +631,8 @@ void handle_changed_partitions()
 			printf("Succesfully mounted.\n");
 			current_mount_device = devname;
 			current_mount_path = new_mount_path;
+
+			scan_current_mount();
 			return;
 		} else {
 			printf("Failed to mount (%s); trying next\n", strerror(errno));
@@ -370,22 +642,10 @@ void handle_changed_partitions()
 
 void handle_mount()
 {
-	/*// Return if not much time has passed since last check
-	static time_t last_checked_time = 0;
-	if(last_checked_time >= time(0) - 2)
-		return;
-	last_checked_time = time(0);*/
-
 	// Calls callbacks; eg. handle_changed_partitions()
 	for(auto fd : partitions_watch->get_fds()){
 		partitions_watch->report_fd(fd);
 	}
-
-	// TODO: Check if any new USB devices have been plugged in
-
-	// TODO: If no USB device is mounted, mount the one that was plugged in
-
-	// TODO: Scan the device and start playing it
 }
 
 int main(int argc, char *argv[])

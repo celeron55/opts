@@ -1,2 +1,2 @@
 #!/bin/sh
-g++ -o player src/main.cpp src/c55_getopt.cpp src/file_watch.cpp `pkg-config --libs --cflags mpv` --std=c++0x -Wall
+g++ -o player src/main.cpp src/c55_getopt.cpp src/file_watch.cpp src/filesys.cpp `pkg-config --libs --cflags mpv` --std=c++0x -Wall
