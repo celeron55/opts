@@ -895,6 +895,8 @@ void handle_mount()
 	static int64_t startup_delay = -1;
 	if(startup_delay == -1){
 		startup_delay = time(0);
+	} else if(startup_delay == -2){
+		// Inotify watchers have been initialized
 	} else if(startup_delay < time(0) - 15){
 		startup_delay = -2;
 
@@ -918,6 +920,15 @@ void handle_mount()
 
 		// Manually check for changed partitions for the last time
 		handle_changed_partitions();
+	} else {
+		// Manually check for changed partitions during boot-up (every
+		// second)
+		static time_t last_timestamp = 0;
+		if(last_timestamp != time(0)){
+			last_timestamp = time(0);
+
+			handle_changed_partitions();
+		}
 	}
 }
 
