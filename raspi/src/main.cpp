@@ -79,6 +79,15 @@ PlayCursor last_succesfully_playing_cursor;
 bool queued_seek_to_cursor = false;
 bool queued_pause = false;
 
+enum PauseMode {
+	PM_PLAY,
+	PM_PAUSE,
+	// Not a real pause but one that is used while in power off mode (until power is
+	// actually cut, or power off mode is switched off)
+	PM_UNFOCUS_PAUSE,
+};
+PauseMode current_pause_mode = PM_PLAY;
+
 time_t last_save_timestamp = 0;
 
 void save_stuff()
@@ -87,14 +96,11 @@ void save_stuff()
 
 	printf("Saving stuff to %s\n", cs(saved_state_path));
 
-	int is_paused = 0;
-	mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &is_paused);
-
 	ss_ save_blob;
 	save_blob += itos(last_succesfully_playing_cursor.album_i) + ";";
 	save_blob += itos(last_succesfully_playing_cursor.track_i) + ";";
 	save_blob += ftos(last_succesfully_playing_cursor.time_pos) + ";";
-	save_blob += itos(is_paused) + ";";
+	save_blob += itos(current_pause_mode == PM_PAUSE) + ";";
 	std::ofstream f(saved_state_path.c_str(), std::ios::binary);
 	f<<save_blob;
 }
@@ -118,6 +124,10 @@ void load_stuff()
 	last_succesfully_playing_cursor.time_pos = stof(f.next(";"), 0.0);
 	queued_pause = stoi(f.next(";"), 0);
 	current_cursor = last_succesfully_playing_cursor;
+
+	if(queued_pause){
+		printf("Queuing pause\n");
+	}
 }
 
 Track get_track(const MediaContent &mc, const PlayCursor &cursor)
@@ -239,6 +249,16 @@ void handle_control_play_test_file()
 
 void force_start_at_cursor()
 {
+	if(current_cursor.time_pos >= 0.001){
+		printf("Starting at %fs\n", current_cursor.time_pos);
+		mpv_set_option_string(mpv, "start", cs(ftos(current_cursor.time_pos)));
+	} else {
+		mpv_set_option_string(mpv, "start", "");
+	}
+
+	void eat_all_mpv_events();
+	eat_all_mpv_events();
+
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	Track track = get_track(current_media_content, current_cursor);
 	const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
@@ -246,10 +266,6 @@ void force_start_at_cursor()
 
 	void refresh_track();
 	refresh_track();
-
-	if(current_cursor.time_pos != 0.0){
-		queued_seek_to_cursor = true;
-	}
 }
 
 void handle_control_playpause()
@@ -263,6 +279,8 @@ void handle_control_playpause()
 
 		// Some kind of track is loaded; toggle playback
 		check_mpv_error(mpv_command_string(mpv, "pause"));
+
+		current_pause_mode = was_pause ? PM_PLAY : PM_PAUSE; // Invert
 
 		if(!was_pause){
 			arduino_set_temp_text("PAUSE");
@@ -487,6 +505,21 @@ void handle_hwcontrols()
 			} else if(first == "<BOOT"){
 				temp_display_album();
 				refresh_track();
+			} else if(first == "<MODE"){
+				ss_ mode = f.next(":");
+				if(mode == "RASPBERRY"){
+					if(current_pause_mode == PM_UNFOCUS_PAUSE){
+						printf("Leaving unfocus pause\n");
+						check_mpv_error(mpv_command_string(mpv, "pause"));
+						current_pause_mode = PM_PLAY;
+					}
+				} else {
+					if(current_pause_mode == PM_PLAY){
+						printf("Entering unfocus pause\n");
+						check_mpv_error(mpv_command_string(mpv, "pause"));
+						current_pause_mode = PM_UNFOCUS_PAUSE;
+					}
+				}
 			} else if(first == "<POWERDOWN_WARNING"){
 				printf("<POWERDOWN_WARNING\n");
 				save_stuff();
@@ -528,6 +561,15 @@ void handle_display()
 	display_next_startpos += 8;
 }
 
+void eat_all_mpv_events()
+{
+	for(;;){
+		mpv_event *event = mpv_wait_event(mpv, 0);
+		if(event->event_id == MPV_EVENT_NONE)
+			break;
+	}
+}
+
 void handle_mpv()
 {
 	for(;;){
@@ -541,23 +583,19 @@ void handle_mpv()
 		if(event->event_id == MPV_EVENT_IDLE){
 			if(!queued_seek_to_cursor){
 				current_cursor.track_i++;
+				current_cursor.time_pos = 0;
 				cursor_bound_wrap(current_media_content, current_cursor);
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 				refresh_track();
 			}
 		}
 		if(event->event_id == MPV_EVENT_FILE_LOADED){
-			if(queued_seek_to_cursor){
-				queued_seek_to_cursor = false;
-				double time_pos = current_cursor.time_pos;
-				printf("Executing queued seek-to-cursor (%fs)\n", time_pos);
-				mpv_command_string(mpv, cs("seek "+itos(time_pos)+" absolute"));
-			}
 			if(queued_pause){
 				queued_pause = false;
 				printf("Executing queued pause\n");
 				check_mpv_error(mpv_command_string(mpv, "pause"));
 				arduino_set_temp_text("PAUSE");
+				current_pause_mode = PM_PAUSE;
 			}
 		}
 	}
@@ -648,8 +686,8 @@ void scan_current_mount()
 
 	printf("Scanned %zu albums.\n", current_media_content.albums.size());
 
-	temp_display_album();
 	current_cursor = last_succesfully_playing_cursor;
+	temp_display_album();
 
 	force_start_at_cursor();
 }
