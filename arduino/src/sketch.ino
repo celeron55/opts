@@ -45,8 +45,7 @@ bool g_amplifier_power_on = false;
 uint8_t g_amplifier_real_power_off_delay = 0; // seconds; counts down
 
 bool g_raspberry_power_on = false;
-//uint8_t g_raspberry_send_power_off_delay = 0; // seconds; counts down
-//bool g_raspberry_have_to_do_power_cycle = false; // If true, raspberry has to be power cycled
+uint8_t g_raspberry_power_off_warning_delay = 0; // seconds; counts down
 uint8_t g_raspberry_real_power_off_delay = 0; // seconds; counts down
 
 bool g_lcd_do_sleep = false;
@@ -675,11 +674,12 @@ void power_off()
 	g_lcd_do_sleep = true;
 
 	g_raspberry_power_on = false;
-	//g_raspberry_send_power_off_delay = 30;
+	g_raspberry_power_off_warning_delay = 5;
 	g_raspberry_real_power_off_delay = 40;
 
 	g_amplifier_power_on = false;
 	g_amplifier_real_power_off_delay = 2;
+
 }
 
 void power_on()
@@ -728,13 +728,13 @@ void loop()
 	if(g_second_counter_timestamp < millis() - 1000 || g_second_counter_timestamp > millis()){
 		g_second_counter_timestamp = millis();
 
-		/*if(!g_raspberry_power_on && g_raspberry_send_power_off_delay > 0){
-			g_raspberry_send_power_off_delay--;
-			if(g_raspberry_send_power_off_delay == 0){
-				// Tell raspberry pi to power down
-				Serial.println("<POWERDOWN");
+		if(!g_raspberry_power_on && g_raspberry_power_off_warning_delay > 0){
+			g_raspberry_power_off_warning_delay--;
+			if(g_raspberry_power_off_warning_delay == 0){
+				// This allows settings to be saved
+				Serial.println("<POWERDOWN_WARNING");
 			}
-		}*/
+		}
 
 		if(!g_raspberry_power_on && g_raspberry_real_power_off_delay > 0){
 			g_raspberry_real_power_off_delay--;
