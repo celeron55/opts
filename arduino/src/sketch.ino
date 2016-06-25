@@ -1,6 +1,9 @@
 #include "lcd.h"
 #include "command_accumulator.h"
 
+#define RASPBERRY_REAL_POWER_OFF_DELAY 600
+#define RASPBERRY_POWER_OFF_WARNING_DELAY 5
+
 const int PIN_LED = 13;
 const int PIN_MAIN_POWER_CONTROL = 4;
 const int PIN_LCD_CE = 7;
@@ -678,8 +681,8 @@ void power_off()
 	g_lcd_do_sleep = true;
 
 	g_raspberry_power_on = false;
-	g_raspberry_power_off_warning_delay = 5;
-	g_raspberry_real_power_off_delay = 40;
+	g_raspberry_power_off_warning_delay = RASPBERRY_POWER_OFF_WARNING_DELAY;
+	g_raspberry_real_power_off_delay = RASPBERRY_REAL_POWER_OFF_DELAY;
 
 	g_amplifier_power_on = false;
 	g_amplifier_real_power_off_delay = 2;
