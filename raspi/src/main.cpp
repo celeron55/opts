@@ -35,6 +35,8 @@ up_<FileWatch> partitions_watch;
 ss_ current_mount_device;
 ss_ current_mount_path;
 
+set_<ss_> disappeared_tracks;
+
 struct Track
 {
 	ss_ path;
@@ -134,6 +136,14 @@ ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
 
 	return ss_()+"Album "+itos(cursor.album_i)+" ("+get_album_name(mc, cursor)+
 			"), track "+itos(cursor.track_i)+" ("+get_track_name(mc, cursor)+")";
+}
+
+size_t get_total_tracks(const MediaContent &mc)
+{
+	size_t total = 0;
+	for(auto &a : mc.albums)
+		total += a.tracks.size();
+	return total;
 }
 
 ss_ truncate(const ss_ &s, size_t len)
@@ -266,8 +276,22 @@ void refresh_track()
 	if(track.path != ""){
 		if(playing_path == NULL || ss_(playing_path) != track.path){
 			printf("Playing path does not match current track; Switching track.\n");
+			// Play the file
 			const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
 			check_mpv_error(mpv_command(mpv, cmd));
+
+			// Check if the file actually even exists; if not, increment a
+			// counter of broken tracks and re-scan media at some point
+			if(access(track.path.c_str(), F_OK) == -1){
+				printf("This track has disappeared\n");
+				disappeared_tracks.insert(track.path);
+				if(disappeared_tracks.size() > get_total_tracks(current_media_content) / 10 ||
+						disappeared_tracks.size() >= 10){
+					printf("Too many disappeared tracks; re-scanning media\n");
+					void scan_current_mount();
+					scan_current_mount();
+				}
+			}
 		}
 	}
 }
@@ -533,6 +557,7 @@ void scan_current_mount()
 {
 	printf("Scanning...\n");
 
+	disappeared_tracks.clear();
 	current_media_content.albums.clear();
 
 	scan_directory("root", current_mount_path, current_media_content.albums);
