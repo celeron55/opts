@@ -699,6 +699,8 @@ void setup()
 {
 	init_io();
 
+	Serial.println(F("<BOOT"));
+
 	power_on();
 }
 
