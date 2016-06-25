@@ -416,12 +416,14 @@ int main(int argc, char *argv[])
 		case 'd':
 			{
 				Strfnd f(c55_optarg);
+				printf("Tracking:");
 				for(;;){
 					ss_ dev = f.next(",");
 					if(dev == "") break;
-					printf("Tracking \"%s\"\n", cs(dev));
+					printf(" %s", cs(dev));
 					track_devices.push_back(dev);
 				}
+				printf("\n");
 			}
 			break;
 		default:
