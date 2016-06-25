@@ -454,10 +454,10 @@ void handle_encoder_value(int8_t rot)
 {
 	if(g_config_menu_show_timer == 0){
 		g_volume_controls.volume += rot;
-		if(g_volume_controls.volume > 80)
-			g_volume_controls.volume = 80;
-		else if(g_volume_controls.volume > 250)
+		if(g_volume_controls.volume > 250)
 			g_volume_controls.volume = 0;
+		else if(g_volume_controls.volume > 80)
+			g_volume_controls.volume = 80;
 		send_volume_update();
 
 		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
