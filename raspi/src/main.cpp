@@ -1,3 +1,4 @@
+#include "arduino_controls.hpp"
 #include "stuff.hpp"
 #include "c55_getopt.h"
 #include "command_accumulator.hpp"
@@ -29,6 +30,10 @@ mpv_handle *mpv = NULL;
 CommandAccumulator<100> stdin_command_accu;
 int arduino_serial_fd = -1;
 CommandAccumulator<100> arduino_message_accu;
+
+time_t display_update_timestamp = 0;
+size_t display_next_startpos = 0;
+ss_ display_last_shown_track_name;
 
 up_<FileWatch> partitions_watch;
 
@@ -67,6 +72,7 @@ struct PlayCursor
 };
 
 PlayCursor current_cursor;
+PlayCursor last_succesfully_playing_cursor;
 
 Track get_track(const MediaContent &mc, const PlayCursor &cursor)
 {
@@ -146,36 +152,6 @@ size_t get_total_tracks(const MediaContent &mc)
 	return total;
 }
 
-ss_ truncate(const ss_ &s, size_t len)
-{
-	if(s.size() < len) return s;
-	return s.substr(0, len);
-}
-
-ss_ squeeze(const ss_ &s0, size_t len)
-{
-	ss_ s = s0;
-	for(size_t i=0; i<s.size(); i++)
-		s[i] = toupper(s[i]);
-
-	if(s.size() < len) return s;
-
-	size_t good_beginning = 0;
-	for(size_t i=0; i<s.size(); i++){
-		if((s[i] < 'a' || s[i] > 'z') && (s[i] < 'A' || s[i] > 'Z')){
-			good_beginning = i;
-		} else {
-			good_beginning = i;
-			break;
-		}
-	}
-	if(good_beginning < s.size() - 2){
-		s = s.substr(good_beginning);
-	}
-
-	return s.substr(0, len);
-}
-
 static inline void check_mpv_error(int status)
 {
     if (status < 0) {
@@ -238,13 +214,9 @@ void handle_control_playpause()
 		check_mpv_error(mpv_command_string(mpv, "pause"));
 
 		if(!was_pause){
-			char buf[30];
-			int l = snprintf(buf, 30, ">SET_TEMP_TEXT:PAUSE\r\n");
-			write(arduino_serial_fd, buf, l);
+			arduino_set_temp_text("PAUSE");
 		} else {
-			char buf[30];
-			int l = snprintf(buf, 30, ">SET_TEMP_TEXT:RESUME\r\n");
-			write(arduino_serial_fd, buf, l);
+			arduino_set_temp_text("RESUME");
 		}
 	} else {
 		// No track is loaded; load from cursor
@@ -254,21 +226,11 @@ void handle_control_playpause()
 
 void refresh_track()
 {
-	if(current_media_content.albums.empty()){
-		// Update display
-		char buf[30];
-		int l = snprintf(buf, 30, ">SET_TEXT:NO MEDIA\r\n");
-		write(arduino_serial_fd, buf, l);
+	void update_display();
+	update_display();
 
-		// Skip everything else
+	if(current_media_content.albums.empty())
 		return;
-	}
-
-	// Update display
-	char buf[30];
-	int l = snprintf(buf, 30, ">SET_TEXT:%s\r\n",
-			cs(squeeze(get_track_name(current_media_content, current_cursor), 8)));
-	write(arduino_serial_fd, buf, l);
 
 	char *playing_path = NULL;
 	ScopeEndTrigger set([&](){ mpv_free(playing_path); });
@@ -304,10 +266,7 @@ void temp_display_album()
 	if(current_media_content.albums.empty())
 		return;
 
-	char buf[30];
-	int l = snprintf(buf, 30, ">SET_TEMP_TEXT:%s\r\n",
-			cs(squeeze(get_album_name(current_media_content, current_cursor), 8)));
-	write(arduino_serial_fd, buf, l);
+	arduino_set_temp_text(squeeze(get_album_name(current_media_content, current_cursor), 8));
 }
 
 void handle_control_next()
@@ -475,6 +434,37 @@ void handle_hwcontrols()
 	}
 }
 
+void update_display()
+{
+	display_update_timestamp = time(0);
+
+	if(current_media_content.albums.empty()){
+		arduino_set_text("NO MEDIA");
+	} else {
+		ss_ track_name = get_track_name(current_media_content, current_cursor);
+		if(track_name != display_last_shown_track_name){
+			display_last_shown_track_name = track_name;
+			display_next_startpos = 0;
+		}
+		ss_ squeezed = squeeze(track_name, 20, display_next_startpos);
+		if(squeezed == ""){
+			display_next_startpos = 0;
+			squeezed = squeeze(track_name, 20, display_next_startpos);
+		}
+		squeezed = squeeze(squeezed, 20);
+		arduino_set_text(squeezed);
+	}
+}
+
+void handle_display()
+{
+	time_t seconds_per_update = 1;
+	if(display_update_timestamp > time(0) - seconds_per_update)
+		return;
+	update_display();
+	display_next_startpos += 8;
+}
+
 void handle_mpv()
 {
 	for(;;){
@@ -491,6 +481,12 @@ void handle_mpv()
 			printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			refresh_track();
 		}
+	}
+
+	double time_pos = 0.0;
+	mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &time_pos);
+	if(time_pos >= 1.0){
+		last_succesfully_playing_cursor = current_cursor;
 	}
 }
 
@@ -568,6 +564,7 @@ void scan_current_mount()
 	printf("Scanned %zu albums.\n", current_media_content.albums.size());
 
 	temp_display_album();
+	current_cursor = last_succesfully_playing_cursor;
 	force_start_current_track();
 }
 
@@ -644,17 +641,23 @@ void handle_changed_partitions()
 {
 	if(current_mount_device != ""){
 		if(!check_partition_exists(current_mount_device)){
-			// Unmount it if the partition doesn't exist anymore
-			printf("Device %s does not exist anymore; umounting\n",
-					cs(current_mount_path));
-			int r = umount(current_mount_path.c_str());
-			if(r == 0){
-				printf("umount %s succesful\n", current_mount_path.c_str());
-				current_mount_device = "";
-				current_mount_path = "";
-				current_media_content.albums.clear();
+			static time_t umount_last_failed_timestamp = 0;
+			if(umount_last_failed_timestamp > time(0) - 30){
+				// Stop flooding these dumb commands
 			} else {
-				printf("umount %s failed: %s\n", current_mount_path.c_str(), strerror(errno));
+				// Unmount it if the partition doesn't exist anymore
+				printf("Device %s does not exist anymore; umounting\n",
+						cs(current_mount_path));
+				int r = umount(current_mount_path.c_str());
+				if(r == 0){
+					printf("umount %s succesful\n", current_mount_path.c_str());
+					current_mount_device = "";
+					current_mount_path = "";
+					current_media_content.albums.clear();
+				} else {
+					printf("umount %s failed: %s\n", current_mount_path.c_str(), strerror(errno));
+					umount_last_failed_timestamp = time(0);
+				}
 			}
 		} else if(get_device_mountpoint(current_mount_device) == ""){
 			printf("Device %s got unmounted from %s\n", cs(current_mount_device),
@@ -666,8 +669,9 @@ void handle_changed_partitions()
 	}
 
 	if(current_mount_device != ""){
-		printf("Ignoring partition change because we have mounted %s at %s\n",
-				cs(current_mount_device), cs(current_mount_path));
+		// This can get extremely spammy; thus it is commented out
+		/*printf("Ignoring partition change because we have mounted %s at %s\n",
+				cs(current_mount_device), cs(current_mount_path));*/
 		return;
 	}
 
@@ -847,6 +851,8 @@ int main(int argc, char *argv[])
 		handle_stdin();
 
 		handle_hwcontrols();
+
+		handle_display();
 
 		handle_mpv();
 
