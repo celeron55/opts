@@ -176,6 +176,16 @@ void raspberry_update()
 			snprintf(g_raspberry_display_text, sizeof g_raspberry_display_text, text);
 			continue;
 		}
+		if(strncmp(command, ">SET_TEMP_TEXT:", 15) == 0){
+			const char *text = &command[15];
+			memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+			char buf[10] = {0};
+			snprintf(buf, 10, "%s", text);
+			set_segments(g_display_data, 0, buf);
+			set_all_segments(g_temp_display_data, buf);
+			g_temp_display_data_timer = 1000;
+			continue;
+		}
 	}
 
 	set_all_segments(g_display_data, g_raspberry_display_text);
