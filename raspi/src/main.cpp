@@ -746,6 +746,39 @@ void handle_mount()
 	for(auto fd : partitions_watch->get_fds()){
 		partitions_watch->report_fd(fd);
 	}
+
+	// Add watched paths after a delay because these paths don't necessarily
+	// exist at the time this program starts up
+	static int64_t startup_delay = -1;
+	if(startup_delay == -1){
+		startup_delay = time(0);
+	} else if(startup_delay < time(0) - 15){
+		startup_delay = -2;
+
+		// Have a few of these because some of them seem to work on some systems
+		// while others work on other systems
+		try {
+			partitions_watch->add("/dev/disk", [](const ss_ &path){
+				printf("Partitions changed (%s)\n", cs(path));
+				handle_changed_partitions();
+			});
+		} catch(Exception &e){}
+		try {
+			partitions_watch->add("/dev/disk/by-path", [](const ss_ &path){
+				printf("Partitions changed (%s)\n", cs(path));
+				handle_changed_partitions();
+			});
+		} catch(Exception &e){}
+		try {
+			partitions_watch->add("/dev/disk/by-uuid", [](const ss_ &path){
+				printf("Partitions changed (%s)\n", cs(path));
+				handle_changed_partitions();
+			});
+		} catch(Exception &e){}
+
+		// Manually check for changed partitions for the last time
+		handle_changed_partitions();
+	}
 }
 
 int main(int argc, char *argv[])
@@ -796,26 +829,6 @@ int main(int argc, char *argv[])
 	try_open_arduino_serial();
 
 	partitions_watch.reset(createFileWatch());
-	// Have a few of these because some of them seem to work on some systems
-	// while others work on other systems
-	try {
-		partitions_watch->add("/dev/disk", [](const ss_ &path){
-			printf("Partitions changed (%s)\n", cs(path));
-			handle_changed_partitions();
-		});
-	} catch(Exception &e){}
-	try {
-		partitions_watch->add("/dev/disk/by-path", [](const ss_ &path){
-			printf("Partitions changed (%s)\n", cs(path));
-			handle_changed_partitions();
-		});
-	} catch(Exception &e){}
-	try {
-		partitions_watch->add("/dev/disk/by-uuid", [](const ss_ &path){
-			printf("Partitions changed (%s)\n", cs(path));
-			handle_changed_partitions();
-		});
-	} catch(Exception &e){}
 
     mpv = mpv_create();
     if (!mpv) {
