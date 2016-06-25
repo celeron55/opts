@@ -793,10 +793,26 @@ int main(int argc, char *argv[])
 	try_open_arduino_serial();
 
 	partitions_watch.reset(createFileWatch());
-	partitions_watch->add("/dev/disk", [](const ss_ &path){
-		printf("Partitions changed (%s)\n", cs(path));
-		handle_changed_partitions();
-	});
+	// Have a few of these because some of them seem to work on some systems
+	// while others work on other systems
+	try {
+		partitions_watch->add("/dev/disk", [](const ss_ &path){
+			printf("Partitions changed (%s)\n", cs(path));
+			handle_changed_partitions();
+		});
+	} catch(Exception &e){}
+	try {
+		partitions_watch->add("/dev/disk/by-path", [](const ss_ &path){
+			printf("Partitions changed (%s)\n", cs(path));
+			handle_changed_partitions();
+		});
+	} catch(Exception &e){}
+	try {
+		partitions_watch->add("/dev/disk/by-uuid", [](const ss_ &path){
+			printf("Partitions changed (%s)\n", cs(path));
+			handle_changed_partitions();
+		});
+	} catch(Exception &e){}
 
     mpv = mpv_create();
     if (!mpv) {
