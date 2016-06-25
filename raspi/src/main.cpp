@@ -383,6 +383,8 @@ void handle_stdin()
 				double pos = 0;
 				mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &pos);
 				printf("pos: %f\n", pos);
+			} else if(command == "save"){
+				save_stuff();
 			} else if(command == "test"){
 				handle_control_play_test_file();
 			} else {
