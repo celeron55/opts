@@ -80,7 +80,7 @@ struct VolumeControls {
 	uint8_t input_switch = 5; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
 	uint8_t mute_switch = 0; // 0, 1
 	uint8_t channel_sel = 3; // 0=initial, 1=L, 2=R, 3=both
-	uint8_t output_gain = 2; // 0=0dB, 1=0dB, 2=+6.5dB, 3=+8.5dB
+	uint8_t output_gain = 3; // 0=0dB, 1=0dB, 2=+6.5dB, 3=+8.5dB
 };
 VolumeControls g_volume_controls;
 
