@@ -94,7 +94,7 @@ void save_stuff()
 {
 	last_save_timestamp = time(0);
 
-	printf("Saving stuff to %s\n", cs(saved_state_path));
+	printf("Saving stuff to %s...\n", cs(saved_state_path));
 
 	ss_ save_blob;
 	save_blob += itos(last_succesfully_playing_cursor.album_i) + ";";
@@ -103,6 +103,9 @@ void save_stuff()
 	save_blob += itos(current_pause_mode == PM_PAUSE) + ";";
 	std::ofstream f(saved_state_path.c_str(), std::ios::binary);
 	f<<save_blob;
+	f.close();
+
+	printf("Saved.\n");
 }
 
 void load_stuff()
@@ -310,6 +313,10 @@ void refresh_track()
 	if(track.path != ""){
 		if(playing_path == NULL || ss_(playing_path) != track.path){
 			printf("Playing path does not match current track; Switching track.\n");
+
+			// Reset starting position
+			mpv_set_option_string(mpv, "start", "0");
+
 			// Play the file
 			const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
 			check_mpv_error(mpv_command(mpv, cmd));
