@@ -135,6 +135,10 @@ void power_off_handle_keys()
 
 		if(!digitalRead(PIN_IGNITION_INPUT)){
 			g_manual_power_state = true;
+		} else {
+			// Powering on while ignition is on resets the manual power state,
+			// and the next time ignition is turned on the player will turn on
+			g_manual_power_state = false;
 		}
 
 		Serial.print(F("<MODE:"));
