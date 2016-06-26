@@ -8,6 +8,7 @@
 #include "filesys.hpp"
 #include "scope_end_trigger.hpp"
 #include "arduino_firmware.hpp"
+#include "../common/common.hpp"
 #include <mpv/client.h>
 #include <fstream>
 #include <sys/poll.h>
@@ -113,6 +114,7 @@ struct Album
 {
 	ss_ name;
 	sv_<Track> tracks;
+	//sv_<size_t> random_order;
 };
 
 struct MediaContent
@@ -126,6 +128,7 @@ struct PlayCursor
 {
 	int album_i = 0;
 	int track_i = 0;
+	//int random_order_i = 0;
 	double time_pos = 0;
 	int64_t stream_pos = 0;
 	ss_ track_name;
@@ -133,6 +136,19 @@ struct PlayCursor
 
 PlayCursor current_cursor;
 PlayCursor last_succesfully_playing_cursor;
+
+// Yes, there are no modes for album progression. Albums progress sequentially,
+// tracks inside albums can progress differencly.
+enum TrackProgressMode {
+	TPM_SEQUENTIAL,
+	TPM_REPEAT,
+	TPM_REPEAT_TRACK,
+	TPM_SHUFFLE,
+
+	TPM_NUM_MODES,
+};
+
+TrackProgressMode track_progress_mode = TPM_SEQUENTIAL;
 
 bool track_was_loaded = false;
 int num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track = 0;
@@ -241,7 +257,9 @@ void save_stuff()
 	save_blob += itos(last_succesfully_playing_cursor.track_i) + ";";
 	save_blob += ftos(last_succesfully_playing_cursor.time_pos) + ";";
 	save_blob += itos(last_succesfully_playing_cursor.stream_pos) + ";";
-	save_blob += itos(current_pause_mode == PM_PAUSE) + ";\n";
+	save_blob += itos(current_pause_mode == PM_PAUSE) + ";";
+	save_blob += itos(track_progress_mode) + ";";
+	save_blob += "\n";
 	save_blob += last_succesfully_playing_cursor.track_name + "\n";
 	std::ofstream f(saved_state_path.c_str(), std::ios::binary);
 	f<<save_blob;
@@ -264,15 +282,19 @@ void load_stuff()
 				std::istreambuf_iterator<char>());
 	}
 	Strfnd f(data);
-	last_succesfully_playing_cursor.album_i = stoi(f.next(";"), 0);
-	last_succesfully_playing_cursor.track_i = stoi(f.next(";"), 0);
-	last_succesfully_playing_cursor.time_pos = stof(f.next(";"), 0.0);
-	last_succesfully_playing_cursor.stream_pos = stoi(f.next(";"), 0);
-	queued_pause = stoi(f.next(";"), 0);
-	f.next("\n");
+	Strfnd f1(f.next("\n"));
+	last_succesfully_playing_cursor.album_i = stoi(f1.next(";"), 0);
+	last_succesfully_playing_cursor.track_i = stoi(f1.next(";"), 0);
+	last_succesfully_playing_cursor.time_pos = stof(f1.next(";"), 0.0);
+	last_succesfully_playing_cursor.stream_pos = stoi(f1.next(";"), 0);
+	queued_pause = stoi(f1.next(";"), 0);
+	track_progress_mode = (TrackProgressMode)stoi(f1.next(";"), 0);
 	last_succesfully_playing_cursor.track_name = f.next("\n");
 
 	current_cursor = last_succesfully_playing_cursor;
+
+	void handle_changed_track_progress_mode();
+	handle_changed_track_progress_mode();
 
 	if(queued_pause){
 		printf("Queuing pause\n");
@@ -313,6 +335,22 @@ void cursor_bound_wrap(const MediaContent &mc, PlayCursor &cursor)
 		cursor.album_i++;
 		if(cursor.album_i >= (int)mc.albums.size())
 			cursor.album_i = 0;
+	}
+}
+
+void cursor_bound_wrap_repeat_album(const MediaContent &mc, PlayCursor &cursor)
+{
+	if(mc.albums.empty())
+		return;
+	if(cursor.album_i < 0)
+		cursor.album_i = mc.albums.size() - 1;
+	if(cursor.album_i >= (int)mc.albums.size())
+		cursor.album_i = 0;
+	const Album &album = mc.albums[cursor.album_i];
+	if(cursor.track_i < 0){
+		cursor.track_i = album.tracks.size() - 1;
+	} else if(cursor.track_i >= (int)album.tracks.size()){
+		cursor.track_i = 0;
 	}
 }
 
@@ -660,6 +698,27 @@ void temp_display_album()
 	display_update_timestamp = time(0) + 1;
 }
 
+void arduino_set_extra_segments()
+{
+	uint8_t extra_segment_flags = 0;
+	switch(track_progress_mode){
+	case TPM_SEQUENTIAL:
+		break;
+	case TPM_REPEAT:
+		extra_segment_flags |= (1<<DISPLAY_FLAG_REPEAT);
+		break;
+	case TPM_REPEAT_TRACK:
+		extra_segment_flags |= (1<<DISPLAY_FLAG_REPEAT) | (1<<DISPLAY_FLAG_REPEAT_ONE);
+		break;
+	case TPM_SHUFFLE:
+		extra_segment_flags |= (1<<DISPLAY_FLAG_SHUFFLE);
+		break;
+	case TPM_NUM_MODES:
+		break;
+	}
+	arduino_serial_write(">EXTRA_SEGMENTS:"+itos(extra_segment_flags)+"\r\n");
+}
+
 void handle_control_next()
 {
 	current_cursor.track_i++;
@@ -708,6 +767,37 @@ void handle_control_prevalbum()
 	load_and_play_current_track_from_start();
 }
 
+void handle_changed_track_progress_mode()
+{
+	const char *mode_s = 
+			track_progress_mode == TPM_SEQUENTIAL ? "SEQUENTIAL" :
+			track_progress_mode == TPM_REPEAT ? "REPEAT" :
+			track_progress_mode == TPM_REPEAT_TRACK ? "TRACK REPEAT" :
+			track_progress_mode == TPM_SHUFFLE ? "SHUFFLE" :
+			"UNKNOWN";
+
+	printf("Track progress mode: %s\n", mode_s);
+
+	if(track_progress_mode == TPM_SHUFFLE){
+		arduino_set_temp_text("NOT IMPL");
+	} else {
+		arduino_set_temp_text(mode_s);
+	}
+
+	void arduino_set_extra_segments();
+	arduino_set_extra_segments();
+}
+
+void handle_control_shufflerepeat()
+{
+	if(track_progress_mode < TPM_NUM_MODES - 1)
+		track_progress_mode = (TrackProgressMode)(track_progress_mode + 1);
+	else
+		track_progress_mode = (TrackProgressMode)0;
+
+	handle_changed_track_progress_mode();
+}
+
 void handle_stdin()
 {
 	ss_ stdin_stuff = read_any(0); // 0=stdin
@@ -721,9 +811,11 @@ void handle_stdin()
 				printf("  nextalbum, N, .\n");
 				printf("  prevalbum, P, ,\n");
 				printf("  pause, [space][enter]\n");
-				printf("  pos\n");
 				printf("  fwd, f\n");
 				printf("  bwd, b\n");
+				printf("  shufflerepeat, sf\n");
+				printf("  pos\n");
+				printf("  save\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
@@ -742,6 +834,8 @@ void handle_stdin()
 				mpv_command_string(mpv, "seek -30");
 				current_cursor.time_pos -= 30;
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+			} else if(command == "shufflerepeat" || command == "sf"){
+				handle_control_shufflerepeat();
 			} else if(command == "pos"){
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "save"){
@@ -779,6 +873,34 @@ void handle_key_press(int key)
 	}
 	if(key == 29){
 		handle_control_prevalbum();
+		return;
+	}
+	if(key == 17){ // Upmost center
+		handle_control_shufflerepeat();
+		return;
+	}
+	if(key == 18){ // Right upper
+		return;
+	}
+	if(key == 13){ // Right lower
+		return;
+	}
+	if(key == 21){ // 1
+		return;
+	}
+	if(key == 16){ // 2
+		return;
+	}
+	if(key == 10){ // 3
+		return;
+	}
+	if(key == 15){ // 4
+		return;
+	}
+	if(key == 20){ // 5
+		return;
+	}
+	if(key == 25){ // 6
 		return;
 	}
 }
@@ -841,6 +963,7 @@ void handle_hwcontrols()
 				handle_key_release(key);
 			} else if(first == "<BOOT"){
 				printf("<BOOT\n");
+				arduino_set_extra_segments();
 				temp_display_album();
 				refresh_track();
 
@@ -954,10 +1077,35 @@ void automated_start_play_next_track()
 
 	track_find_strategy_next_i = 0;
 
-	current_cursor.track_i++;
-	current_cursor.time_pos = 0;
-	current_cursor.stream_pos = 0;
-	cursor_bound_wrap(current_media_content, current_cursor);
+	switch(track_progress_mode){
+	case TPM_SEQUENTIAL:
+		current_cursor.track_i++;
+		current_cursor.time_pos = 0;
+		current_cursor.stream_pos = 0;
+		cursor_bound_wrap(current_media_content, current_cursor);
+		break;
+	case TPM_REPEAT:
+		current_cursor.track_i++;
+		current_cursor.time_pos = 0;
+		current_cursor.stream_pos = 0;
+		cursor_bound_wrap_repeat_album(current_media_content, current_cursor);
+		break;
+	case TPM_REPEAT_TRACK:
+		current_cursor.time_pos = 0;
+		current_cursor.stream_pos = 0;
+		break;
+	case TPM_SHUFFLE:
+		// NOTE: Not implemented; currently behaves like sequential
+		// TODO
+		current_cursor.track_i++;
+		current_cursor.time_pos = 0;
+		current_cursor.stream_pos = 0;
+		cursor_bound_wrap(current_media_content, current_cursor);
+		break;
+	case TPM_NUM_MODES:
+		break;
+	}
+
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	refresh_track();
 }
@@ -1028,8 +1176,10 @@ void handle_mpv()
 						current_track_stream_end);
 			}
 
-			arduino_serial_write(">PROGRESS:"+
-					itos(stream_pos * 255 / current_track_stream_end)+"\r\n");
+			if(!minimize_display_updates || time(0) % 10 == 0){
+				arduino_serial_write(">PROGRESS:"+
+						itos(stream_pos * 255 / current_track_stream_end)+"\r\n");
+			}
 		}
 	}
 

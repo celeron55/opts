@@ -1,0 +1,8 @@
+#pragma once
+
+#define DISPLAY_FLAG_REPEAT 0
+#define DISPLAY_FLAG_REPEAT_ONE 1
+#define DISPLAY_FLAG_INTRO 2
+#define DISPLAY_FLAG_SHUFFLE 3
+#define DISPLAY_FLAG_ALBUM 4
+

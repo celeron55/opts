@@ -1,6 +1,7 @@
 #include "lcd.h"
 #include "command_accumulator.h"
 #include "../version.h"
+#include "../../common/common.hpp"
 #include <avr/eeprom.h>
 
 #define RASPBERRY_REAL_POWER_OFF_DELAY 600
@@ -133,6 +134,7 @@ Mode CONTROL_MODES[] = {
 
 char g_raspberry_display_text[9] = "RASPBERR";
 uint8_t g_raspberry_display_progress = 0; // 0-255
+uint8_t g_raspberry_display_extra_segments = 0;
 
 void power_off_update()
 {
@@ -188,6 +190,29 @@ void aux_handle_keys()
 	}
 }
 
+void render_raspberry_extras(uint8_t *data)
+{
+	static const uint8_t progress_segments[] = {
+		14, 19, 23, 15, 93, 92, 135, 165, 164,
+	};
+	for(uint8_t i=0; i<sizeof progress_segments; i++){
+		if(g_raspberry_display_progress >= i * 255 / sizeof progress_segments +
+				255 / sizeof progress_segments / 2){
+			uint8_t a = progress_segments[i];
+			data[a / 8] |= 1 << (a % 8); // AUX icon
+		}
+	}
+	static const uint8_t DISPLAY_FLAG_SEGMENTS[] = {
+		111, 115, 127, 130, 131,
+	};
+	for(uint8_t i=0; i<sizeof DISPLAY_FLAG_SEGMENTS; i++){
+		if(g_raspberry_display_extra_segments & (1<<i)){
+			uint8_t a = DISPLAY_FLAG_SEGMENTS[i];
+			data[a / 8] |= 1 << (a % 8); // AUX icon
+		}
+	}
+}
+
 void raspberry_update()
 {
 	while(command_accumulator.read(Serial)){
@@ -207,14 +232,17 @@ void raspberry_update()
 			memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
 			char buf[10] = {0};
 			snprintf(buf, 10, "%s", text);
-			set_segments(g_display_data, 0, buf);
 			set_all_segments(g_temp_display_data, buf);
+			render_raspberry_extras(g_temp_display_data);
 			g_temp_display_data_timer = 1000;
 			continue;
 		}
 		if(strncmp(command, ">PROGRESS:", 10) == 0){
-			const char *progress_cs = &command[10];
-			g_raspberry_display_progress = atoi(progress_cs);
+			g_raspberry_display_progress = atoi(&command[10]);
+			continue;
+		}
+		if(strncmp(command, ">EXTRA_SEGMENTS:", 16) == 0){
+			g_raspberry_display_extra_segments = atoi(&command[16]);
 			continue;
 		}
 	}
@@ -225,16 +253,7 @@ void raspberry_update()
 
 		set_all_segments(g_display_data, g_raspberry_display_text);
 
-		static const uint8_t progress_segments[] = {
-			14, 19, 23, 15, 93, 92, 135, 165, 164,
-		};
-		for(uint8_t i=0; i<sizeof progress_segments; i++){
-			if(g_raspberry_display_progress >= i * 255 / sizeof progress_segments +
-					255 / sizeof progress_segments / 2){
-				uint8_t a = progress_segments[i];
-				g_display_data[a / 8] |= 1 << (a % 8); // AUX icon
-			}
-		}
+		render_raspberry_extras(g_display_data);
 	}
 
 	if(g_volume_controls.input_switch != 5){
@@ -602,6 +621,7 @@ void handle_encoder_value(int8_t rot)
 		static uint8_t lcd_i = 13;
 		lcd_i += rot;
 		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		g_temp_display_data[0] = 0x11;
 		bool key_shown = false;
 		for(uint8_t i=0; i<30; i++){
 			if(lcd_is_key_pressed(g_current_keys, i)){
@@ -619,7 +639,7 @@ void handle_encoder_value(int8_t rot)
 			set_all_segments(g_temp_display_data, buf);
 			g_temp_display_data_timer = 1;
 		}
-		g_temp_display_data[lcd_i/8] = 1 << (lcd_i % 8);
+		g_temp_display_data[lcd_i/8] |= 1 << (lcd_i % 8);
 	}
 }
 
@@ -944,10 +964,11 @@ void loop()
 
 	display_special_stuff();
 
-	if(g_temp_display_data_timer > 0)
+	if(g_temp_display_data_timer > 0){
 		lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
-	else
+	} else {
 		lcd_send_display(0x24 | (g_lcd_do_sleep ? 0x07 : 0), g_display_data);
+	}
 
 	if(g_saveables_dirty){
 		save_everything_with_rate_limit(60000);
