@@ -16,6 +16,7 @@ while true; do
 
 		systemctl stop autosoitin
 
+		# These probably don't even work
 		echo -ne ">SET_TEXT:SW UP\r\n" > /dev/ttyUSB0
 		echo -ne ">SET_TEXT:SW UP\r\n" > /dev/ttyUSB1
 		echo -ne ">SET_TEXT:SW UP\r\n" > /dev/ttyUSB2
