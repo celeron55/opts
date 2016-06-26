@@ -56,6 +56,46 @@ ss_ current_mount_device;
 ss_ current_mount_path;
 
 set_<ss_> disappeared_tracks;
+bool queued_pause = false;
+
+enum TrackFindStrategyStep {
+	TFSS_LOADFILE,
+	TFSS_SCAN_CURRENT_MOUNT,
+	TFSS_CHECK_CHANGED_PARTITIONS,
+	TFSS_WAIT_2S,
+
+	TFSS_FORGET_IT,
+
+	TFSS_COUNT,
+};
+// Track is switched only after this strategy is executed
+const TrackFindStrategyStep TRACK_FIND_STRATEGY[] = {
+	TFSS_LOADFILE,
+	TFSS_WAIT_2S,
+	TFSS_SCAN_CURRENT_MOUNT,
+	TFSS_LOADFILE,
+	TFSS_CHECK_CHANGED_PARTITIONS,
+	TFSS_WAIT_2S,
+	TFSS_SCAN_CURRENT_MOUNT,
+	TFSS_LOADFILE,
+	TFSS_CHECK_CHANGED_PARTITIONS,
+	TFSS_WAIT_2S,
+	TFSS_SCAN_CURRENT_MOUNT,
+	TFSS_LOADFILE,
+	TFSS_CHECK_CHANGED_PARTITIONS,
+	TFSS_WAIT_2S,
+	TFSS_SCAN_CURRENT_MOUNT,
+	TFSS_LOADFILE,
+	TFSS_CHECK_CHANGED_PARTITIONS,
+	TFSS_WAIT_2S,
+	TFSS_SCAN_CURRENT_MOUNT,
+	TFSS_LOADFILE,
+	TFSS_CHECK_CHANGED_PARTITIONS,
+	TFSS_FORGET_IT,
+};
+size_t track_find_strategy_next_i = 0;
+time_t track_find_strategy_wait_time = 0;
+time_t track_find_strategy_wait_timestamp = 0;
 
 struct Track
 {
@@ -85,11 +125,29 @@ struct PlayCursor
 	int album_i = 0;
 	int track_i = 0;
 	double time_pos = 0;
+	ss_ track_name;
 };
 
 PlayCursor current_cursor;
 PlayCursor last_succesfully_playing_cursor;
-bool queued_pause = false;
+
+bool track_was_loaded = false;
+int num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track = 0;
+
+void on_loadfile(double start_pos, const ss_ &track_name)
+{
+	track_was_loaded = true;
+	num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track = start_pos;
+
+	track_find_strategy_next_i = 0;
+	track_find_strategy_wait_time = 0;
+
+	if(current_cursor.track_name != track_name){
+		printf("WARNING: Changing track name at loadfile to \"%s\"\n",
+				cs(track_name));
+		current_cursor.track_name = track_name;
+	}
+}
 
 enum PauseMode {
 	PM_PLAY,
@@ -99,6 +157,40 @@ enum PauseMode {
 	PM_UNFOCUS_PAUSE,
 };
 PauseMode current_pause_mode = PM_PLAY;
+
+/*enum PlayHealthinessStatus {
+	PHS_PLAYING,
+	PHS_MAYBE_PLAYING,
+	PHS_FUCKED,
+};*/
+
+bool is_track_playing_fine()
+{
+	if(!track_was_loaded){
+		return false;
+	}
+
+	double duration = 0;
+	mpv_get_property(mpv, "duration", MPV_FORMAT_DOUBLE, &duration);
+	if(duration < 5){
+		return true;
+	}
+
+	double time_pos = 0;
+	mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &time_pos);
+
+	if(time_pos > duration - 5){
+		return true;
+	}
+
+	if(num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track < 3){
+		return true;
+	}
+	if(current_cursor.time_pos < num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track / 1.2 - 3){
+		return false;
+	}
+	return true;
+}
 
 time_t last_save_timestamp = 0;
 
@@ -112,7 +204,8 @@ void save_stuff()
 	save_blob += itos(last_succesfully_playing_cursor.album_i) + ";";
 	save_blob += itos(last_succesfully_playing_cursor.track_i) + ";";
 	save_blob += ftos(last_succesfully_playing_cursor.time_pos) + ";";
-	save_blob += itos(current_pause_mode == PM_PAUSE) + ";";
+	save_blob += itos(current_pause_mode == PM_PAUSE) + ";\n";
+	save_blob += last_succesfully_playing_cursor.track_name + "\n";
 	std::ofstream f(saved_state_path.c_str(), std::ios::binary);
 	f<<save_blob;
 	f.close();
@@ -138,6 +231,9 @@ void load_stuff()
 	last_succesfully_playing_cursor.track_i = stoi(f.next(";"), 0);
 	last_succesfully_playing_cursor.time_pos = stof(f.next(";"), 0.0);
 	queued_pause = stoi(f.next(";"), 0);
+	f.next("\n");
+	last_succesfully_playing_cursor.track_name = f.next("\n");
+
 	current_cursor = last_succesfully_playing_cursor;
 
 	if(queued_pause){
@@ -211,9 +307,114 @@ ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
 	if(current_media_content.albums.empty())
 		return "No media";
 
-	return ss_()+"Album "+itos(cursor.album_i)+" ("+get_album_name(mc, cursor)+
+	ss_ s = "Album "+itos(cursor.album_i)+" ("+get_album_name(mc, cursor)+
 			"), track "+itos(cursor.track_i)+" ("+get_track_name(mc, cursor)+")"+
 			(cursor.time_pos != 0.0 ? (", pos "+ftos(cursor.time_pos)+"s") : ss_());
+	if(get_track_name(mc, cursor) != cursor.track_name)
+		s += ", should be track ("+cursor.track_name+")";
+	return s;
+}
+
+// If failed, return false and leave cursor as-is.
+bool resolve_track_from_current_album(const MediaContent &mc, PlayCursor &cursor)
+{
+	if(cursor.album_i >= (int)mc.albums.size())
+		return false;
+	const Album &album = mc.albums[cursor.album_i];
+	PlayCursor cursor1 = cursor;
+	for(cursor1.track_i=0; cursor1.track_i<(int)album.tracks.size(); cursor1.track_i++){
+		const Track &track = album.tracks[cursor1.track_i];
+		if(track.display_name == cursor.track_name){
+			cursor = cursor1;
+			return true;
+		}
+	}
+	return false;
+}
+
+// If failed, return false and leave cursor as-is.
+bool resolve_track_from_any_album(const MediaContent &mc, PlayCursor &cursor)
+{
+	PlayCursor cursor1 = cursor;
+	for(cursor1.album_i=0; cursor1.album_i<(int)mc.albums.size(); cursor1.album_i++){
+		bool found = resolve_track_from_current_album(mc, cursor1);
+		if(found){
+			cursor = cursor1;
+			return true;
+		}
+	}
+	return false;
+}
+
+// Find track by the same name as near the cursor as possible. If failed, return
+// false and leave cursor as-is.
+bool force_resolve_track(const MediaContent &mc, PlayCursor &cursor)
+{
+	if(cursor.album_i >= (int)mc.albums.size()){
+		return resolve_track_from_any_album(mc, cursor);
+	}
+	const Album &album = mc.albums[cursor.album_i];
+	if(cursor.track_i >= (int)album.tracks.size()){
+		bool found = resolve_track_from_current_album(mc, cursor);
+		if(found)
+			return true;
+		return resolve_track_from_any_album(mc, cursor);
+	}
+	const Track &track = album.tracks[cursor.track_i];
+	if(track.display_name != cursor.track_name){
+		bool found = resolve_track_from_current_album(mc, cursor);
+		if(found)
+			return true;
+		return resolve_track_from_any_album(mc, cursor);
+	}
+	return true;
+}
+
+void execute_track_find_strategy()
+{
+	if(track_find_strategy_wait_time > 0){
+		if(track_find_strategy_wait_timestamp >= time(0) - track_find_strategy_wait_time)
+			return;
+		track_find_strategy_wait_time = 0;
+	}
+	TrackFindStrategyStep next_step = TRACK_FIND_STRATEGY[track_find_strategy_next_i++];
+	switch(next_step){
+	case TFSS_LOADFILE: {
+		printf("TFS: Trying force resolve track\n");
+		bool found = force_resolve_track(current_media_content, current_cursor);
+		if(found){
+			printf("TFS: -> Found; Trying force start at cursor\n");
+			void force_start_at_cursor();
+			force_start_at_cursor();
+		} else {
+			printf("TFS: -> Not found\n");
+		}
+		break; }
+	case TFSS_SCAN_CURRENT_MOUNT: {
+		printf("TFS: Scanning current mount\n");
+		void scan_current_mount();
+		scan_current_mount();
+		break; }
+	case TFSS_CHECK_CHANGED_PARTITIONS: {
+		printf("TFS: Checking changed partitions\n");
+		void handle_changed_partitions();
+		handle_changed_partitions();
+		break; }
+	case TFSS_WAIT_2S: {
+		printf("TFS: Waiting 2S\n");
+		track_find_strategy_wait_time = 2;
+		track_find_strategy_wait_timestamp = time(0);
+		break; }
+	case TFSS_FORGET_IT: {
+		printf("TFS: Giving up.\n");
+		track_find_strategy_next_i = 0;
+		void automated_start_play_next_track();
+		automated_start_play_next_track();
+		break; }
+	case TFSS_COUNT: {
+		abort();
+		break; }
+	}
 }
 
 size_t get_total_tracks(const MediaContent &mc)
@@ -260,10 +461,25 @@ void handle_control_play_test_file()
 	printf("Playing test file \"%s\"\n", cs(test_file_path));
 	const char *cmd[] = {"loadfile", test_file_path.c_str(), NULL};
 	check_mpv_error(mpv_command(mpv, cmd));
+
+	on_loadfile(0, "test file");
 }
 
 void force_start_at_cursor()
 {
+	printf("Force-start at cursor\n");
+	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+
+	Track track = get_track(current_media_content, current_cursor);
+	if(track.display_name != "" && current_cursor.track_name == ""){
+		printf("Warning: Cursor has empty track name\n");
+	}
+	if(track.display_name != current_cursor.track_name){
+		printf("Track name does not match cursor name\n");
+		track_was_loaded = false;
+		return;
+	}
+
 	if(current_cursor.time_pos >= 0.001){
 		printf("Force-starting at %fs\n", current_cursor.time_pos);
 		mpv_set_option_string(mpv, "start", cs(ftos(current_cursor.time_pos)));
@@ -275,10 +491,10 @@ void force_start_at_cursor()
 	void eat_all_mpv_events();
 	eat_all_mpv_events();
 
-	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-	Track track = get_track(current_media_content, current_cursor);
 	const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
 	check_mpv_error(mpv_command(mpv, cmd));
+
+	on_loadfile(0, track.display_name);
 
 	// Wait for the start-file event
 	void wait_mpv_event(int event_id, int max_ms);
@@ -324,11 +540,14 @@ void load_and_play_current_track_from_start()
 	const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
 	check_mpv_error(mpv_command(mpv, cmd));
 
+	on_loadfile(0, track.display_name);
+
 	// Check if the file actually even exists; if not, increment a
 	// counter of broken tracks and re-scan media at some point
 	if(access(track.path.c_str(), F_OK) == -1){
 		printf("This track has disappeared\n");
 		disappeared_tracks.insert(track.path);
+		track_was_loaded = false;
 		if(disappeared_tracks.size() > get_total_tracks(current_media_content) / 10 ||
 				disappeared_tracks.size() >= 10){
 			printf("Too many disappeared tracks; re-scanning media\n");
@@ -353,6 +572,8 @@ void refresh_track()
 
 	Track track = get_track(current_media_content, current_cursor);
 	if(track.path != ""){
+		current_cursor.track_name = track.display_name;
+
 		if(playing_path == NULL || ss_(playing_path) != track.path){
 			printf("Playing path does not match current track; Switching track.\n");
 
@@ -653,6 +874,19 @@ void wait_mpv_event(int event_id, int max_ms)
 	}
 }
 
+void automated_start_play_next_track()
+{
+	printf("Automated start of next track\n");
+
+	track_find_strategy_next_i = 0;
+
+	current_cursor.track_i++;
+	current_cursor.time_pos = 0;
+	cursor_bound_wrap(current_media_content, current_cursor);
+	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+	refresh_track();
+}
+
 void handle_mpv()
 {
 	for(;;){
@@ -665,11 +899,12 @@ void handle_mpv()
 			do_main_loop = false;
 		}
 		if(event->event_id == MPV_EVENT_IDLE){
-			current_cursor.track_i++;
-			current_cursor.time_pos = 0;
-			cursor_bound_wrap(current_media_content, current_cursor);
-			printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-			refresh_track();
+			bool is_track_playing_fine();
+			if(is_track_playing_fine()){
+				automated_start_play_next_track();
+			} else {
+				execute_track_find_strategy();
+			}
 		}
 		if(event->event_id == MPV_EVENT_FILE_LOADED){
 			if(queued_pause){
@@ -685,6 +920,9 @@ void handle_mpv()
 	static time_t last_time_pos_get_timestamp = 0;
 	if(last_time_pos_get_timestamp != time(0)){
 		last_time_pos_get_timestamp = time(0);
+
+		if(current_pause_mode == PM_PLAY)
+			num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track++;
 
 		double time_pos = 0;
 		mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &time_pos);
@@ -769,6 +1007,12 @@ void scan_current_mount()
 	printf("Scanned %zu albums.\n", current_media_content.albums.size());
 
 	current_cursor = last_succesfully_playing_cursor;
+
+	if(!force_resolve_track(current_media_content, current_cursor)){
+		printf("Force-resolve track failed\n");
+		execute_track_find_strategy();
+	}
+
 	temp_display_album();
 
 	force_start_at_cursor();
@@ -1042,6 +1286,12 @@ void handle_periodic_save()
 	save_stuff();
 }
 
+void handle_track_find_strategy()
+{
+	if(!is_track_playing_fine())
+		execute_track_find_strategy();
+}
+
 void sigint_handler(int _)
 {
 	printf("SIGINT\n");
@@ -1164,6 +1414,8 @@ int main(int argc, char *argv[])
 		handle_mount();
 
 		handle_periodic_save();
+
+		handle_track_find_strategy();
 
 		usleep(1000000/60);
 	}
