@@ -28,6 +28,7 @@ enum ConfigOption {
 	CO_BASS,
 	CO_TREBLE,
 	CO_BENIS,
+	CO_PI_CYCLE,
 
 	CO_NUM_OPTIONS,
 };
@@ -493,6 +494,12 @@ void handle_encoder_value(int8_t rot)
 			a = 0;
 			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
 		}
+		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		char buf[10] = {0};
+		snprintf(buf, 10, "BASS %i    ", g_volume_controls.bass);
+		set_segments(g_display_data, 0, buf);
+		set_all_segments(g_temp_display_data, buf);
+		g_temp_display_data_timer = 1;
 	} else if(g_config_option == CO_TREBLE){
 		static int8_t a = 0;
 		a += rot;
@@ -506,6 +513,12 @@ void handle_encoder_value(int8_t rot)
 			a = 0;
 			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
 		}
+		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		char buf[10] = {0};
+		snprintf(buf, 10, "TREB %i    ", g_volume_controls.treble);
+		set_segments(g_display_data, 0, buf);
+		set_all_segments(g_temp_display_data, buf);
+		g_temp_display_data_timer = 1;
 	} else if(g_config_option == CO_BENIS){
 		static int8_t a = 0;
 		a += rot;
@@ -514,6 +527,42 @@ void handle_encoder_value(int8_t rot)
 			a = 0;
 			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
 		}
+		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		char buf[10] = {0};
+		snprintf(buf, 10, "BENIS %i", g_benis_mode_enabled);
+		set_segments(g_display_data, 0, buf);
+		set_all_segments(g_temp_display_data, buf);
+		g_temp_display_data_timer = 1;
+	} else if(g_config_option == CO_PI_CYCLE){
+		if(rot != 1)
+			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+		static int8_t a = 0;
+		a += rot;
+		if(a < 0){
+			a = 0;
+		} else if(a >= 100){
+			a = 0;
+			set_all_segments(g_temp_display_data, "PI OFF");
+			lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
+			digitalWrite(PIN_RASPBERRY_POWER_OFF, HIGH);
+			delay(2000);
+			set_all_segments(g_temp_display_data, "PI ON");
+			lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
+			digitalWrite(PIN_RASPBERRY_POWER_OFF, LOW);
+			delay(2000);
+			snprintf(g_raspberry_display_text, sizeof g_raspberry_display_text,
+					"RASPBERR");
+		}
+		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		char buf[10] = {0};
+		if(a < 10){
+			snprintf(buf, 10, "PI CYCLE");
+		} else {
+			snprintf(buf, 10, "P C %i%", a);
+		}
+		set_segments(g_display_data, 0, buf);
+		set_all_segments(g_temp_display_data, buf);
+		g_temp_display_data_timer = 1;
 	}
 }
 
@@ -646,30 +695,19 @@ void display_special_stuff()
 	}
 	if(g_config_menu_show_timer > 0){
 		if(g_config_option == CO_BASS){
-			memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
-			char buf[10] = {0};
-			snprintf(buf, 10, "BASS %i    ", g_volume_controls.bass);
-			set_segments(g_display_data, 0, buf);
-			set_all_segments(g_temp_display_data, buf);
-			g_temp_display_data_timer = 1;
+			handle_encoder_value(0);
 			return;
 		}
 		if(g_config_option == CO_TREBLE){
-			memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
-			char buf[10] = {0};
-			snprintf(buf, 10, "TREB %i    ", g_volume_controls.treble);
-			set_segments(g_display_data, 0, buf);
-			set_all_segments(g_temp_display_data, buf);
-			g_temp_display_data_timer = 1;
+			handle_encoder_value(0);
 			return;
 		}
 		if(g_config_option == CO_BENIS){
-			memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
-			char buf[10] = {0};
-			snprintf(buf, 10, "BENIS %i", g_benis_mode_enabled);
-			set_segments(g_display_data, 0, buf);
-			set_all_segments(g_temp_display_data, buf);
-			g_temp_display_data_timer = 1;
+			handle_encoder_value(0);
+			return;
+		}
+		if(g_config_option == CO_PI_CYCLE){
+			handle_encoder_value(0);
 			return;
 		}
 	}
