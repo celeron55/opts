@@ -206,7 +206,7 @@ ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
 
 	return ss_()+"Album "+itos(cursor.album_i)+" ("+get_album_name(mc, cursor)+
 			"), track "+itos(cursor.track_i)+" ("+get_track_name(mc, cursor)+")"+
-			", pos "+ftos(cursor.time_pos)+"s";
+			(cursor.time_pos != 0.0 ? (", pos "+ftos(cursor.time_pos)+"s") : ss_());
 }
 
 size_t get_total_tracks(const MediaContent &mc)
@@ -423,6 +423,7 @@ void handle_stdin()
 				printf("  nextalbum, N\n");
 				printf("  prevalbum, P\n");
 				printf("  pause, [space][enter]\n");
+				printf("  pos\n");
 				printf("  fwd, f\n");
 				printf("  bwd, b\n");
 			} else if(command == "next" || command == "n"){
@@ -440,9 +441,7 @@ void handle_stdin()
 			} else if(command == "bwd" || command == "b"){
 				mpv_command_string(mpv, "seek -30");
 			} else if(command == "pos"){
-				double pos = 0;
-				mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &pos);
-				printf("pos: %f\n", pos);
+				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "save"){
 				save_stuff();
 			} else if(command == "test"){
