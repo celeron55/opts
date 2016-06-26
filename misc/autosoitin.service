@@ -5,7 +5,7 @@ Description=Autosoitin
 DefaultDependencies=false
 
 [Service]
-ExecStart=/home/pi/dev/autosoitin/player -s /dev/ttyUSB0 -s /dev/ttyUSB1 -s /dev/ttyUSB2 -d sda,sdb,sdc,sdd,sde,sdf,sdg -S /var/autosoitin_saved_state
+ExecStart=/home/pi/dev/autosoitin/player -s /dev/ttyUSB0 -s /dev/ttyUSB1 -s /dev/ttyUSB2 -d sd -S /var/autosoitin_saved_state
 WorkingDirectory=/home/pi/dev/autosoitin
 Restart=always
 RestartSec=3

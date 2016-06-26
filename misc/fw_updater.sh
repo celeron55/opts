@@ -14,7 +14,22 @@ while true; do
 		mount /dev/sdb1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
 		mount /dev/sdc1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
 		mount /dev/sdd1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
-		mount /dev/sde1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null
+		mount /dev/sde1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdf1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdg1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdh1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdi1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdj1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdk1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdl1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdm1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdn1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdo1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdp1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdq1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdr1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sds1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null ||
+		mount /dev/sdt1 "$MOUNTPOINT" -o ro -t vfat 1>/dev/null 2>/dev/null
 	fi
 	if [ -d "$MOUNTPOINT"/FW ]; then
 		if [ -e "$MOUNTPOINT"/FW/upgraded.txt ]; then
