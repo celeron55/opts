@@ -1,0 +1,17 @@
+# /etc/systemd/system/fw_updater.service
+
+[Unit]
+Description=Autosoitin FW updater
+DefaultDependencies=false
+
+[Service]
+ExecStart=/home/pi/dev/autosoitin/misc/fw_updater.sh
+WorkingDirectory=/home/pi/dev/autosoitin
+Restart=always
+RestartSec=3
+#StandardOutput=journal
+#StandardError=journal
+
+[Install]
+WantedBy=local-fs.target
+
