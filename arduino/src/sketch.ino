@@ -4,7 +4,7 @@
 #include <avr/eeprom.h>
 
 #define RASPBERRY_REAL_POWER_OFF_DELAY 600
-#define RASPBERRY_POWER_OFF_WARNING_DELAY 5
+#define RASPBERRY_POWER_OFF_WARNING_DELAY 1
 
 const int PIN_LED = 13;
 const int PIN_MAIN_POWER_CONTROL = 4;
