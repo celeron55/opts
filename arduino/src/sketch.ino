@@ -1,6 +1,7 @@
 #include "lcd.h"
 #include "command_accumulator.h"
 #include "../version.h"
+#include <avr/eeprom.h>
 
 #define RASPBERRY_REAL_POWER_OFF_DELAY 600
 #define RASPBERRY_POWER_OFF_WARNING_DELAY 5
@@ -19,6 +20,8 @@ const int PIN_VOL_CL = 13;
 const int PIN_STANDBY_DISABLE = 5;
 const int PIN_RASPBERRY_POWER_OFF = 2;
 const int PIN_IGNITION_INPUT = A2;
+
+bool g_saveables_dirty = false;
 
 uint8_t g_encoder_last_state = 0xff;
 
@@ -70,12 +73,6 @@ uint8_t g_temp_display_data[] = {
 };
 uint16_t g_temp_display_data_timer = 0; // milliseconds; counts down
 
-enum ControlMode {
-	CM_POWER_OFF,
-	CM_AUX,
-	CM_RASPBERRY,
-} g_control_mode = CM_RASPBERRY;
-
 struct VolumeControls {
 	uint8_t fader = 15; // 0...15 (-infdB...0dB)
 	uint8_t super_bass = 0; // 0...10
@@ -94,6 +91,12 @@ VolumeControls g_volume_controls;
 
 CommandAccumulator<50> command_accumulator;
 
+enum ControlMode {
+	CM_POWER_OFF,
+	CM_AUX,
+	CM_RASPBERRY,
+} g_control_mode = CM_RASPBERRY;
+
 struct Mode {
 	const char *name;
 	void (*update)();
@@ -102,30 +105,32 @@ struct Mode {
 
 void power_off_update();
 void power_off_handle_keys();
-Mode g_mode_power_off = {
-	"POWER_OFF",
-	power_off_update,
-	power_off_handle_keys,
-};
 
 void aux_update();
 void aux_handle_keys();
-Mode g_mode_aux = {
-	"AUX",
-	aux_update,
-	aux_handle_keys,
-};
 
 void raspberry_update();
 void raspberry_handle_keys();
-Mode g_mode_raspberry = {
-	"RASPBERRY",
-	raspberry_update,
-	raspberry_handle_keys,
-};
-char g_raspberry_display_text[9] = "RASPBERR";
 
-Mode *g_current_mode = &g_mode_raspberry;
+Mode CONTROL_MODES[] = {
+	{
+		"POWER_OFF",
+		power_off_update,
+		power_off_handle_keys,
+	},
+	{
+		"AUX",
+		aux_update,
+		aux_handle_keys,
+	},
+	{
+		"RASPBERRY",
+		raspberry_update,
+		raspberry_handle_keys,
+	},
+};
+
+char g_raspberry_display_text[9] = "RASPBERR";
 
 void power_off_update()
 {
@@ -136,9 +141,9 @@ void power_off_handle_keys()
 {
 	// Power button
 	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
-		g_current_mode = &g_mode_aux;
-
 		power_on();
+		g_control_mode = CM_AUX;
+		g_saveables_dirty = true;
 
 		if(!digitalRead(PIN_IGNITION_INPUT)){
 			g_manual_power_state = true;
@@ -149,7 +154,7 @@ void power_off_handle_keys()
 		}
 
 		Serial.print(F("<MODE:"));
-		Serial.println(g_current_mode->name);
+		Serial.println(CONTROL_MODES[g_control_mode].name);
 	}
 }
 
@@ -170,10 +175,11 @@ void aux_handle_keys()
 	// Power button
 	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
 		power_on();
-		g_current_mode = &g_mode_raspberry;
+		g_control_mode = CM_RASPBERRY;
+		g_saveables_dirty = true;
 
 		Serial.print(F("<MODE:"));
-		Serial.println(g_current_mode->name);
+		Serial.println(CONTROL_MODES[g_control_mode].name);
 	}
 }
 
@@ -215,8 +221,8 @@ void raspberry_handle_keys()
 {
 	// Power button
 	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
-		g_current_mode = &g_mode_power_off;
-
+		g_control_mode = CM_POWER_OFF;
+		g_saveables_dirty = true;
 		power_off();
 
 		if(digitalRead(PIN_IGNITION_INPUT)){
@@ -224,7 +230,7 @@ void raspberry_handle_keys()
 		}
 
 		Serial.print(F("<MODE:"));
-		Serial.println(g_current_mode->name);
+		Serial.println(CONTROL_MODES[g_control_mode].name);
 	}
 	for(uint8_t i=0; i<30; i++){
 		if(i == 22 || i == 28)
@@ -474,6 +480,7 @@ void handle_encoder_value(int8_t rot)
 		else if(g_volume_controls.volume > 80)
 			g_volume_controls.volume = 80;
 		send_volume_update();
+		g_saveables_dirty = true;
 
 		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
 		char buf[10] = {0};
@@ -491,6 +498,7 @@ void handle_encoder_value(int8_t rot)
 			else if(g_volume_controls.bass < -7)
 				g_volume_controls.bass = -7;
 			send_volume_update();
+			g_saveables_dirty = true;
 			a = 0;
 			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
 		}
@@ -510,6 +518,7 @@ void handle_encoder_value(int8_t rot)
 			else if(g_volume_controls.treble < -7)
 				g_volume_controls.treble = -7;
 			send_volume_update();
+			g_saveables_dirty = true;
 			a = 0;
 			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
 		}
@@ -640,8 +649,8 @@ void handle_encoder()
 
 void mode_update()
 {
-	if(g_current_mode && g_current_mode->update)
-		(*g_current_mode->update)();
+	if(CONTROL_MODES[g_control_mode].update)
+		(*CONTROL_MODES[g_control_mode].update)();
 }
 
 void handle_config_item_switch()
@@ -677,8 +686,8 @@ void handle_keys()
 {
 	handle_config_button();
 
-	if(g_current_mode && g_current_mode->handle_keys)
-		(*g_current_mode->handle_keys)();
+	if(CONTROL_MODES[g_control_mode].handle_keys)
+		(*CONTROL_MODES[g_control_mode].handle_keys)();
 }
 
 // Returns true if special stuff is shown
@@ -719,6 +728,53 @@ void display_special_stuff()
 	}
 }
 
+void save_everything()
+{
+	Serial.println(F("<SAVING\r\n"));
+	g_saveables_dirty = false;
+
+	uint8_t *wa = 0;
+	// Identification byte
+	eeprom_write_byte(wa++, 251);
+	// Version byte
+	eeprom_write_byte(wa++, 1);
+	// Parameters
+	eeprom_write_byte(wa++, g_control_mode);
+	eeprom_write_byte(wa++, g_volume_controls.volume);
+	eeprom_write_byte(wa++, g_volume_controls.bass);
+	eeprom_write_byte(wa++, g_volume_controls.treble);
+}
+
+void load_everything()
+{
+	Serial.println(F("<LOADING\r\n"));
+
+	uint8_t *ra = 0;
+	// Identification byte
+	uint8_t identification = eeprom_read_byte(ra++);
+	if(identification != 251){
+		Serial.println("<DEBUG:Wrong data identification in EEPROM");
+		return;
+	}
+	g_saveables_dirty = false;
+	// Version byte
+	uint8_t version = eeprom_read_byte(ra++);
+	// Parameters
+	g_control_mode = (ControlMode)eeprom_read_byte(ra++);
+	g_volume_controls.volume = eeprom_read_byte(ra++);
+	g_volume_controls.bass = eeprom_read_byte(ra++);
+	g_volume_controls.treble = eeprom_read_byte(ra++);
+}
+
+void save_everything_with_rate_limit(uint32_t rate_limit_ms)
+{
+	static uint32_t last_ms = 0;
+	if(last_ms < millis() - rate_limit_ms || last_ms > millis()){
+		last_ms = millis();
+		save_everything();
+	}
+}
+
 void power_off()
 {
 	// Standby amplifier
@@ -733,6 +789,7 @@ void power_off()
 	g_amplifier_power_on = false;
 	g_amplifier_real_power_off_delay = 2;
 
+	save_everything_with_rate_limit(5000);
 }
 
 void power_on()
@@ -762,7 +819,13 @@ void setup()
 {
 	init_io();
 
-	power_on();
+	load_everything();
+
+	if(g_control_mode != CM_POWER_OFF){
+		power_on();
+	} else {
+		power_off();
+	}
 }
 
 void loop()
@@ -854,5 +917,9 @@ void loop()
 		lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
 	else
 		lcd_send_display(0x24 | (g_lcd_do_sleep ? 0x07 : 0), g_display_data);
+
+	if(g_saveables_dirty){
+		save_everything_with_rate_limit(60000);
+	}
 }
 
