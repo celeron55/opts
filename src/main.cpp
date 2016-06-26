@@ -213,13 +213,12 @@ bool is_track_at_natural_end()
 		return false;
 	}
 
-	int64_t stream_pos = 0;
-	mpv_get_property(mpv, "stream-pos", MPV_FORMAT_INT64, &stream_pos);
-
 	if(current_track_stream_end == 0){
 		printf("is_track_at_natural_end(): current_track_stream_end == 0 -> false\n");
 		return false;
 	}
+
+	int64_t stream_pos = current_cursor.stream_pos;
 
 	bool is = (stream_pos >= current_track_stream_end * 0.9 - 5);
 
@@ -737,8 +736,12 @@ void handle_stdin()
 				handle_control_playpause();
 			} else if(command == "fwd" || command == "f"){
 				mpv_command_string(mpv, "seek +30");
+				current_cursor.time_pos += 30;
+				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "bwd" || command == "b"){
 				mpv_command_string(mpv, "seek -30");
+				current_cursor.time_pos -= 30;
+				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "pos"){
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "save"){
