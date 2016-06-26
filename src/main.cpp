@@ -981,6 +981,13 @@ void handle_mpv()
 		}
 		if(event->event_id == MPV_EVENT_FILE_LOADED){
 			track_was_loaded = true;
+			if(current_track_stream_end == 0){
+				int64_t stream_end = 0;
+				mpv_get_property(mpv, "stream-end", MPV_FORMAT_INT64, &stream_end);
+				current_track_stream_end = stream_end;
+				printf("Got current track stream_end: %" PRId64 "\n",
+						current_track_stream_end);
+			}
 			if(queued_pause){
 				queued_pause = false;
 				printf("Executing queued pause\n");
