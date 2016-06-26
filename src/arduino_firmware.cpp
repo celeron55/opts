@@ -33,7 +33,7 @@ void arduino_firmware_update_if_needed(const ss_ &current_version)
 		printf("Can't read %s\n", cs(version_h_path));
 		printf("Not updating firmware from version %s\n", cs(current_version));
 		arduino_set_text("FWUFAIL1");
-		usleep(2000000);
+		usleep(3000000);
 		return;
 	}
 
@@ -44,7 +44,7 @@ void arduino_firmware_update_if_needed(const ss_ &current_version)
 		printf("version.h version length is not 32 (\"%s\")\n", cs(version_h_version));
 		printf("Not updating firmware from version %s\n", cs(current_version));
 		arduino_set_text("FWUFAIL2");
-		usleep(2000000);
+		usleep(3000000);
 		return;
 	}
 
@@ -64,7 +64,7 @@ void arduino_firmware_update_if_needed(const ss_ &current_version)
 		printf("Failed to execute avrdude.\n");
 		printf("Not updating firmware from version %s\n", cs(current_version));
 		arduino_set_text("FWUFAIL3");
-		usleep(2000000);
+		usleep(3000000);
 	} else {
 		printf("Arduino firmware updated from %s to %s\n",
 				cs(current_version), cs(version_h_version));
