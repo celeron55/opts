@@ -55,7 +55,7 @@ up_<FileWatch> partitions_watch;
 ss_ current_mount_device;
 ss_ current_mount_path;
 
-set_<ss_> disappeared_tracks;
+//set_<ss_> disappeared_tracks;
 bool queued_pause = false;
 
 enum TrackFindStrategyStep {
@@ -63,6 +63,7 @@ enum TrackFindStrategyStep {
 	TFSS_SCAN_CURRENT_MOUNT,
 	TFSS_CHECK_CHANGED_PARTITIONS,
 	TFSS_WAIT_2S,
+	TFSS_WAIT_4S,
 
 	TFSS_FORGET_IT,
 
@@ -79,15 +80,15 @@ const TrackFindStrategyStep TRACK_FIND_STRATEGY[] = {
 	TFSS_SCAN_CURRENT_MOUNT,
 	TFSS_LOADFILE,
 	TFSS_CHECK_CHANGED_PARTITIONS,
-	TFSS_WAIT_2S,
+	TFSS_WAIT_4S,
 	TFSS_SCAN_CURRENT_MOUNT,
 	TFSS_LOADFILE,
 	TFSS_CHECK_CHANGED_PARTITIONS,
-	TFSS_WAIT_2S,
+	TFSS_WAIT_4S,
 	TFSS_SCAN_CURRENT_MOUNT,
 	TFSS_LOADFILE,
 	TFSS_CHECK_CHANGED_PARTITIONS,
-	TFSS_WAIT_2S,
+	TFSS_WAIT_4S,
 	TFSS_SCAN_CURRENT_MOUNT,
 	TFSS_LOADFILE,
 	TFSS_CHECK_CHANGED_PARTITIONS,
@@ -96,6 +97,7 @@ const TrackFindStrategyStep TRACK_FIND_STRATEGY[] = {
 size_t track_find_strategy_next_i = 0;
 time_t track_find_strategy_wait_time = 0;
 time_t track_find_strategy_wait_timestamp = 0;
+ss_ track_find_strategy_current_track_name;
 
 struct Track
 {
@@ -125,6 +127,7 @@ struct PlayCursor
 	int album_i = 0;
 	int track_i = 0;
 	double time_pos = 0;
+	int64_t stream_pos = 0;
 	ss_ track_name;
 };
 
@@ -133,19 +136,25 @@ PlayCursor last_succesfully_playing_cursor;
 
 bool track_was_loaded = false;
 int num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track = 0;
+int64_t current_track_stream_end = 0;
+
+time_t mpv_last_not_idle_timestamp = 0;
 
 void on_loadfile(double start_pos, const ss_ &track_name)
 {
-	track_was_loaded = true;
 	num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track = start_pos;
-
-	track_find_strategy_next_i = 0;
-	track_find_strategy_wait_time = 0;
+	current_track_stream_end = 0; // Will be filled in at time-pos getter code or something
 
 	if(current_cursor.track_name != track_name){
 		printf("WARNING: Changing track name at loadfile to \"%s\"\n",
 				cs(track_name));
 		current_cursor.track_name = track_name;
+	}
+	// If track changed, reset track find strategy
+	if(track_name != track_find_strategy_current_track_name){
+		track_find_strategy_current_track_name = track_name;
+		track_find_strategy_next_i = 0;
+		track_find_strategy_wait_time = 0;
 	}
 }
 
@@ -170,16 +179,18 @@ bool is_track_playing_fine()
 		return false;
 	}
 
-	double duration = 0;
-	mpv_get_property(mpv, "duration", MPV_FORMAT_DOUBLE, &duration);
-	if(duration < 5){
+	int64_t stream_end = 0;
+	mpv_get_property(mpv, "stream-end", MPV_FORMAT_INT64, &stream_end);
+	// Don't care for <50kB files
+	if(stream_end < 50000){
 		return true;
 	}
 
-	double time_pos = 0;
-	mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &time_pos);
+	int64_t stream_pos = 0;
+	mpv_get_property(mpv, "stream-pos", MPV_FORMAT_INT64, &stream_pos);
 
-	if(time_pos > duration - 5){
+	// Don't care if the track is about to end
+	if(stream_pos > stream_end - 50000){
 		return true;
 	}
 
@@ -190,6 +201,29 @@ bool is_track_playing_fine()
 		return false;
 	}
 	return true;
+}
+
+bool is_track_at_natural_end()
+{
+	if(!track_was_loaded){
+		printf("is_track_at_natural_end(): !track_was_loaded -> false\n");
+		return false;
+	}
+
+	int64_t stream_pos = 0;
+	mpv_get_property(mpv, "stream-pos", MPV_FORMAT_INT64, &stream_pos);
+
+	if(current_track_stream_end == 0){
+		printf("is_track_at_natural_end(): current_track_stream_end == 0 -> false\n");
+		return false;
+	}
+
+	bool is = (stream_pos >= current_track_stream_end * 0.9 - 5);
+
+	printf("is_track_at_natural_end(): stream_pos=%" PRId64
+			", current_track_stream_end=%" PRId64 " -> %s\n",
+			stream_pos, current_track_stream_end, is?"true":"false");
+	return is;
 }
 
 time_t last_save_timestamp = 0;
@@ -204,6 +238,7 @@ void save_stuff()
 	save_blob += itos(last_succesfully_playing_cursor.album_i) + ";";
 	save_blob += itos(last_succesfully_playing_cursor.track_i) + ";";
 	save_blob += ftos(last_succesfully_playing_cursor.time_pos) + ";";
+	save_blob += itos(last_succesfully_playing_cursor.stream_pos) + ";";
 	save_blob += itos(current_pause_mode == PM_PAUSE) + ";\n";
 	save_blob += last_succesfully_playing_cursor.track_name + "\n";
 	std::ofstream f(saved_state_path.c_str(), std::ios::binary);
@@ -230,6 +265,7 @@ void load_stuff()
 	last_succesfully_playing_cursor.album_i = stoi(f.next(";"), 0);
 	last_succesfully_playing_cursor.track_i = stoi(f.next(";"), 0);
 	last_succesfully_playing_cursor.time_pos = stof(f.next(";"), 0.0);
+	last_succesfully_playing_cursor.stream_pos = stoi(f.next(";"), 0);
 	queued_pause = stoi(f.next(";"), 0);
 	f.next("\n");
 	last_succesfully_playing_cursor.track_name = f.next("\n");
@@ -372,6 +408,9 @@ bool force_resolve_track(const MediaContent &mc, PlayCursor &cursor)
 
 void execute_track_find_strategy()
 {
+	// Let's hope the TFS system gets rid of a possible idle state
+	mpv_last_not_idle_timestamp = time(0);
+
 	if(track_find_strategy_wait_time > 0){
 		if(track_find_strategy_wait_timestamp >= time(0) - track_find_strategy_wait_time)
 			return;
@@ -401,8 +440,13 @@ void execute_track_find_strategy()
 		handle_changed_partitions();
 		break; }
 	case TFSS_WAIT_2S: {
-		printf("TFS: Waiting 2S\n");
+		printf("TFS: Waiting 2s\n");
 		track_find_strategy_wait_time = 2;
+		track_find_strategy_wait_timestamp = time(0);
+		break; }
+	case TFSS_WAIT_4S: {
+		printf("TFS: Waiting 4s\n");
+		track_find_strategy_wait_time = 4;
 		track_find_strategy_wait_timestamp = time(0);
 		break; }
 	case TFSS_FORGET_IT: {
@@ -473,8 +517,7 @@ void force_start_at_cursor()
 	Track track = get_track(current_media_content, current_cursor);
 	if(track.display_name != "" && current_cursor.track_name == ""){
 		printf("Warning: Cursor has empty track name\n");
-	}
-	if(track.display_name != current_cursor.track_name){
+	} else if(track.display_name != current_cursor.track_name){
 		printf("Track name does not match cursor name\n");
 		track_was_loaded = false;
 		return;
@@ -504,10 +547,31 @@ void force_start_at_cursor()
 	refresh_track();
 }
 
+bool mpv_is_idle()
+{
+	char *idle_cs = NULL;
+	mpv_get_property(mpv, "idle", MPV_FORMAT_STRING, &idle_cs);
+	if(idle_cs == NULL){
+		static bool warned = false;
+		if(!warned){
+			warned = true;
+			printf("WARNING: MPV property \"idle\" returns NULL; "
+					"using the filename property instead.\n");
+		}
+		char *filename_cs = NULL;
+		mpv_get_property(mpv, "filename", MPV_FORMAT_STRING, &filename_cs);
+		bool is_idle = (filename_cs == NULL);
+		mpv_free(filename_cs);
+		return is_idle;
+	}
+	bool is_idle = (strcmp(idle_cs, "yes") == 0);
+	mpv_free(idle_cs);
+	return is_idle;
+}
+
 void handle_control_playpause()
 {
-	int idle = 0;
-	mpv_get_property(mpv, "idle", MPV_FORMAT_FLAG, &idle);
+	bool idle = mpv_is_idle();
 
 	if(!idle){
 		int was_pause = 0;
@@ -542,7 +606,7 @@ void load_and_play_current_track_from_start()
 
 	on_loadfile(0, track.display_name);
 
-	// Check if the file actually even exists; if not, increment a
+	/*// Check if the file actually even exists; if not, increment a
 	// counter of broken tracks and re-scan media at some point
 	if(access(track.path.c_str(), F_OK) == -1){
 		printf("This track has disappeared\n");
@@ -554,7 +618,7 @@ void load_and_play_current_track_from_start()
 			void scan_current_mount();
 			scan_current_mount();
 		}
-	}
+	}*/
 }
 
 void refresh_track()
@@ -598,6 +662,7 @@ void handle_control_next()
 {
 	current_cursor.track_i++;
 	current_cursor.time_pos = 0;
+	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	load_and_play_current_track_from_start();
@@ -607,6 +672,7 @@ void handle_control_prev()
 {
 	current_cursor.track_i--;
 	current_cursor.time_pos = 0;
+	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	load_and_play_current_track_from_start();
@@ -617,6 +683,7 @@ void handle_control_nextalbum()
 	current_cursor.album_i++;
 	current_cursor.track_i = 0;
 	current_cursor.time_pos = 0;
+	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
 
 	temp_display_album();
@@ -630,6 +697,7 @@ void handle_control_prevalbum()
 	current_cursor.album_i--;
 	current_cursor.track_i = 0;
 	current_cursor.time_pos = 0;
+	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
 
 	temp_display_album();
@@ -882,9 +950,19 @@ void automated_start_play_next_track()
 
 	current_cursor.track_i++;
 	current_cursor.time_pos = 0;
+	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	refresh_track();
+}
+
+void do_something_instead_of_idle()
+{
+	if(is_track_at_natural_end()){
+		automated_start_play_next_track();
+	} else {
+		execute_track_find_strategy();
+	}
 }
 
 void handle_mpv()
@@ -899,14 +977,10 @@ void handle_mpv()
 			do_main_loop = false;
 		}
 		if(event->event_id == MPV_EVENT_IDLE){
-			bool is_track_playing_fine();
-			if(is_track_playing_fine()){
-				automated_start_play_next_track();
-			} else {
-				execute_track_find_strategy();
-			}
+			do_something_instead_of_idle();
 		}
 		if(event->event_id == MPV_EVENT_FILE_LOADED){
+			track_was_loaded = true;
 			if(queued_pause){
 				queued_pause = false;
 				printf("Executing queued pause\n");
@@ -926,10 +1000,38 @@ void handle_mpv()
 
 		double time_pos = 0;
 		mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &time_pos);
-		if(time_pos >= 2){
+		int64_t stream_pos = 0;
+		mpv_get_property(mpv, "stream-pos", MPV_FORMAT_INT64, &stream_pos);
+		if(time_pos >= 2 && stream_pos > 0){
 			current_cursor.time_pos = time_pos;
+			current_cursor.stream_pos = stream_pos;
 			last_succesfully_playing_cursor = current_cursor;
+
+			if(current_track_stream_end == 0){
+				int64_t stream_end = 0;
+				mpv_get_property(mpv, "stream-end", MPV_FORMAT_INT64, &stream_end);
+				current_track_stream_end = stream_end;
+				printf("Got current track stream_end: %" PRId64 "\n",
+						current_track_stream_end);
+			}
 		}
+	}
+
+	// Handle idle state that wasn't taken care of immediately for whatever
+	// reason
+	bool idle = mpv_is_idle();
+	if(idle){
+		if(mpv_last_not_idle_timestamp == 0){
+			mpv_last_not_idle_timestamp = time(0);
+		} else if(mpv_last_not_idle_timestamp > time(0) - 5){
+			// Fine enough until 5 seconds of idle
+		} else {
+			printf("MPV Idled for too long; doing something\n");
+			mpv_last_not_idle_timestamp = time(0);
+			do_something_instead_of_idle();
+		}
+	} else {
+		mpv_last_not_idle_timestamp = time(0);
 	}
 }
 
@@ -999,7 +1101,7 @@ void scan_current_mount()
 {
 	printf("Scanning...\n");
 
-	disappeared_tracks.clear();
+	//disappeared_tracks.clear();
 	current_media_content.albums.clear();
 
 	scan_directory("root", current_mount_path, current_media_content.albums);
