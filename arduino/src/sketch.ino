@@ -1,5 +1,6 @@
 #include "lcd.h"
 #include "command_accumulator.h"
+#include "../version.h"
 
 #define RASPBERRY_REAL_POWER_OFF_DELAY 600
 #define RASPBERRY_POWER_OFF_WARNING_DELAY 5
@@ -41,6 +42,8 @@ uint32_t g_last_keys_timestamp = 0;
 
 uint32_t g_second_counter_timestamp = 0;
 uint32_t g_millisecond_counter_timestamp = 0;
+
+uint8_t g_boot_message_delay = 100; // milliseconds; counts down
 
 bool g_manual_power_state = false; // True if powered on/off regardless of ignition input
 
@@ -177,6 +180,11 @@ void raspberry_update()
 {
 	while(command_accumulator.read(Serial)){
 		const char *command = command_accumulator.command();
+		if(strcmp(command, ">VERSION") == 0){
+			Serial.print(F("<VERSION:"));
+			Serial.println(VERSION_STRING);
+			continue;
+		}
 		if(strncmp(command, ">SET_TEXT:", 10) == 0){
 			const char *text = &command[10];
 			snprintf(g_raspberry_display_text, sizeof g_raspberry_display_text, text);
@@ -716,8 +724,6 @@ void setup()
 {
 	init_io();
 
-	Serial.println(F("<BOOT"));
-
 	power_on();
 }
 
@@ -765,6 +771,15 @@ void loop()
 	} else {
 		uint32_t dt_ms = millis() - g_millisecond_counter_timestamp;
 		g_millisecond_counter_timestamp = millis();
+
+		if(g_boot_message_delay != 0){
+			if(g_boot_message_delay > dt_ms){
+				g_boot_message_delay -= dt_ms;
+			} else {
+				g_boot_message_delay = 0;
+				Serial.println(F("<BOOT"));
+			}
+		}
 
 		if(g_temp_display_data_timer > dt_ms)
 			g_temp_display_data_timer -= dt_ms;

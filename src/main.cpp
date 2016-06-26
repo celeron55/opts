@@ -7,6 +7,7 @@
 #include "types.hpp"
 #include "filesys.hpp"
 #include "scope_end_trigger.hpp"
+#include "arduino_firmware.hpp"
 #include <mpv/client.h>
 #include <fstream>
 #include <sys/poll.h>
@@ -33,10 +34,16 @@ int arduino_display_width = 8;
 bool minimize_display_updates = false;
 set_<ss_> enabled_log_sources;
 
+time_t startup_timestamp = 0;
+
 bool do_main_loop = true;
 mpv_handle *mpv = NULL;
 CommandAccumulator<100> stdin_command_accu;
+
 int arduino_serial_fd = -1;
+ss_ arduino_serial_fd_path;
+bool tried_to_update_arduino_firmware = false;
+time_t arduino_last_incoming_message_timestamp = 0;
 CommandAccumulator<100> arduino_message_accu;
 
 time_t display_update_timestamp = 0;
@@ -499,6 +506,7 @@ void try_open_arduino_serial()
 			continue;
 		}
 		printf("Opened arduino serial port %s\n", cs(arduino_serial_path));
+		arduino_serial_fd_path = arduino_serial_path;
 		return;
 	}
 }
@@ -524,6 +532,7 @@ void handle_hwcontrols()
 	}
 	for(char c : serial_stuff){
 		if(arduino_message_accu.put_char(c)){
+			arduino_last_incoming_message_timestamp = time(0);
 			ss_ message = arduino_message_accu.command();
 			Strfnd f(message);
 			ss_ first = f.next(":");
@@ -536,8 +545,11 @@ void handle_hwcontrols()
 				printf("<KEY_RELEASE: %i\n", key);
 				handle_key_release(key);
 			} else if(first == "<BOOT"){
+				printf("<BOOT\n");
 				temp_display_album();
 				refresh_track();
+
+				arduino_request_version();
 			} else if(first == "<MODE"){
 				ss_ mode = f.next(":");
 				if(mode == "RASPBERRY"){
@@ -556,10 +568,26 @@ void handle_hwcontrols()
 			} else if(first == "<POWERDOWN_WARNING"){
 				printf("<POWERDOWN_WARNING\n");
 				save_stuff();
+			} else if(first == "<VERSION"){
+				printf("%s\n", cs(message));
+				ss_ version = f.next("");
+				if(!tried_to_update_arduino_firmware){
+					tried_to_update_arduino_firmware = true;
+					arduino_firmware_update_if_needed(version);
+				}
 			} else {
 				printf("%s (ignored)\n", cs(message));
 			}
 		}
+	}
+
+	// Trigger arduino firmware upgrade if arduino doesn't send anything
+	if(arduino_serial_fd_path != "" &&
+			!tried_to_update_arduino_firmware &&
+			arduino_last_incoming_message_timestamp < time(0) - 10 &&
+			startup_timestamp < time(0) - 10){
+		tried_to_update_arduino_firmware = true;
+		arduino_firmware_update_if_needed("(no version response)");
 	}
 }
 
@@ -1015,6 +1043,7 @@ void sigint_handler(int _)
 int main(int argc, char *argv[])
 {
 	signal(SIGINT, sigint_handler);
+	startup_timestamp = time(0);
 
 	const char opts[100] = "hs:t:d:S:m:D:UW:l:";
 	const char usagefmt[1000] =

@@ -5,4 +5,5 @@ sudo apt-get install gstreamer0.10-fluendo-mp3
 sudo apt-get install gstreamer-plugins-bad0.10-0
 sudo apt-get install gstreamer0.10-plugins-ugly
 sudo apt-get install gstreamer0.10-plugins-good
+sudo apt-get install avrdude
 

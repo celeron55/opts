@@ -3,3 +3,4 @@
 session.vim
 /player
 /saved_state*
+/avrdude.log*

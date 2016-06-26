@@ -1,5 +1,4 @@
 #pragma once
-#include "stuff.hpp"
 #include "types.hpp"
 #include <unistd.h>
 
@@ -49,8 +48,11 @@ static void arduino_serial_write(const char *data, size_t len)
 		printf("%s", cs(ss_(data, len)));
 	}
 	if(arduino_serial_fd != -1){
-		size_t r = write(arduino_serial_fd, data, len);
-		if(r != len){
+		int r = write(arduino_serial_fd, data, len);
+		if(r == -1){
+			printf("Arduino write error\n");
+			arduino_serial_fd = -1;
+		} else if((size_t)r != len){
 			printf("WARNING: Arduino serial didn't take the entire message\n");
 			// TODO: Maybe handle this properly
 		}
@@ -79,5 +81,12 @@ static void arduino_set_temp_text(const ss_ &text)
 	if(arduino_serial_debug_mode == "fancy"){
 		printf("[[%s]]\n", cs(truncate(text, arduino_display_width)));
 	}
+}
+
+static void arduino_request_version()
+{
+	char buf[30];
+	int l = snprintf(buf, 30, ">VERSION\r\n");
+	arduino_serial_write(buf, l);
 }
 
