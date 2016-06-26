@@ -418,21 +418,21 @@ void handle_stdin()
 			ss_ command = stdin_command_accu.command();
 			if(command == "help" || command == "h" || command == "?"){
 				printf("Commands:\n");
-				printf("  next, n\n");
-				printf("  prev, p\n");
-				printf("  nextalbum, N\n");
-				printf("  prevalbum, P\n");
+				printf("  next, n, +\n");
+				printf("  prev, p, -\n");
+				printf("  nextalbum, N, .\n");
+				printf("  prevalbum, P, ,\n");
 				printf("  pause, [space][enter]\n");
 				printf("  pos\n");
 				printf("  fwd, f\n");
 				printf("  bwd, b\n");
-			} else if(command == "next" || command == "n"){
+			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
-			} else if(command == "prev" || command == "p"){
+			} else if(command == "prev" || command == "p" || command == "-"){
 				handle_control_prev();
-			} else if(command == "nextalbum" || command == "N"){
+			} else if(command == "nextalbum" || command == "N" || command == "."){
 				handle_control_nextalbum();
-			} else if(command == "prevalbum" || command == "P"){
+			} else if(command == "prevalbum" || command == "P" || command == ","){
 				handle_control_prevalbum();
 			} else if(command == "pause" || command == " "){
 				handle_control_playpause();
