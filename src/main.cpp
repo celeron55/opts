@@ -150,12 +150,15 @@ void on_loadfile(double start_pos, const ss_ &track_name)
 				cs(track_name));
 		current_cursor.track_name = track_name;
 	}
+
 	// If track changed, reset track find strategy
 	if(track_name != track_find_strategy_current_track_name){
 		track_find_strategy_current_track_name = track_name;
 		track_find_strategy_next_i = 0;
 		track_find_strategy_wait_time = 0;
 	}
+
+	arduino_serial_write(">PROGRESS:0\r\n");
 }
 
 enum PauseMode {
@@ -537,7 +540,7 @@ void force_start_at_cursor()
 	const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
 	check_mpv_error(mpv_command(mpv, cmd));
 
-	on_loadfile(0, track.display_name);
+	on_loadfile(current_cursor.time_pos, track.display_name);
 
 	// Wait for the start-file event
 	void wait_mpv_event(int event_id, int max_ms);
@@ -1021,6 +1024,9 @@ void handle_mpv()
 				printf("Got current track stream_end: %" PRId64 "\n",
 						current_track_stream_end);
 			}
+
+			arduino_serial_write(">PROGRESS:"+
+					itos(stream_pos * 255 / current_track_stream_end)+"\r\n");
 		}
 	}
 

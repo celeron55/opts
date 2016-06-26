@@ -59,6 +59,11 @@ static void arduino_serial_write(const char *data, size_t len)
 	}
 }
 
+static void arduino_serial_write(const ss_ &data)
+{
+	arduino_serial_write(data.c_str(), data.size());
+}
+
 static void arduino_set_text(const ss_ &text)
 {
 	char buf[30];

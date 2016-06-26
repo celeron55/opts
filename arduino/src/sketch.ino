@@ -132,9 +132,11 @@ Mode CONTROL_MODES[] = {
 };
 
 char g_raspberry_display_text[9] = "RASPBERR";
+uint8_t g_raspberry_display_progress = 0; // 0-255
 
 void power_off_update()
 {
+	memset(g_display_data + 1, 0, sizeof g_display_data - 1);
 	set_segments(g_display_data, 0, "POWER OFF");
 }
 
@@ -161,6 +163,8 @@ void power_off_handle_keys()
 
 void aux_update()
 {
+	memset(g_display_data + 1, 0, sizeof g_display_data - 1);
+	g_display_data[163 / 8] |= 1 << (163 % 8); // AUX icon
 	char buf[10] = {0};
 	snprintf(buf, 10, "AUX %i    ", g_volume_controls.volume);
 	set_segments(g_display_data, 0, buf);
@@ -208,9 +212,30 @@ void raspberry_update()
 			g_temp_display_data_timer = 1000;
 			continue;
 		}
+		if(strncmp(command, ">PROGRESS:", 10) == 0){
+			const char *progress_cs = &command[10];
+			g_raspberry_display_progress = atoi(progress_cs);
+			continue;
+		}
 	}
 
-	set_all_segments(g_display_data, g_raspberry_display_text);
+	// Update LCD
+	{
+		memset(g_display_data + 1, 0, sizeof g_display_data - 1);
+
+		set_all_segments(g_display_data, g_raspberry_display_text);
+
+		static const uint8_t progress_segments[] = {
+			14, 19, 23, 15, 93, 92, 135, 165, 164,
+		};
+		for(uint8_t i=0; i<sizeof progress_segments; i++){
+			if(g_raspberry_display_progress >= i * 255 / sizeof progress_segments +
+					255 / sizeof progress_segments / 2){
+				uint8_t a = progress_segments[i];
+				g_display_data[a / 8] |= 1 << (a % 8); // AUX icon
+			}
+		}
+	}
 
 	if(g_volume_controls.input_switch != 5){
 		g_volume_controls.input_switch = 5;
@@ -574,7 +599,7 @@ void handle_encoder_value(int8_t rot)
 		g_temp_display_data_timer = 1;
 	} else if(g_config_option == CO_LCD_AND_BUTTONS_TEST){
 		g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
-		static uint8_t lcd_i = 0;
+		static uint8_t lcd_i = 13;
 		lcd_i += rot;
 		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
 		bool key_shown = false;
