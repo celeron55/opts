@@ -431,7 +431,7 @@ void handle_stdin()
 			} else if(command == "test"){
 				handle_control_play_test_file();
 			} else {
-				printf("Invalid command: \"%s\"", cs(command));
+				printf("Invalid command: \"%s\"\n", cs(command));
 			}
 		}
 	}
