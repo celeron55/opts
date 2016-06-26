@@ -29,6 +29,7 @@ ss_ test_file_path;
 sv_<ss_> track_devices;
 ss_ static_mount_path;
 ss_ arduino_serial_debug_mode = "off"; // off / raw / fancy
+int arduino_display_width = 8;
 bool minimize_display_updates = false;
 
 bool do_main_loop = true;
@@ -350,7 +351,8 @@ void temp_display_album()
 	if(current_media_content.albums.empty())
 		return;
 
-	arduino_set_temp_text(squeeze(get_album_name(current_media_content, current_cursor), 8));
+	arduino_set_temp_text(squeeze(get_album_name(current_media_content, current_cursor),
+			arduino_display_width));
 
 	// Delay track scroll for one second
 	display_update_timestamp = time(0) + 1;
@@ -561,13 +563,13 @@ void update_display()
 		display_last_shown_track_name = track_name;
 		display_next_startpos = 0;
 	}
-	ss_ squeezed = squeeze(track_name, 20, display_next_startpos);
+	ss_ squeezed = squeeze(track_name, arduino_display_width * 2, display_next_startpos);
 	if(squeezed == ""){
 		display_next_startpos = 0;
-		squeezed = squeeze(track_name, 20, display_next_startpos);
+		squeezed = squeeze(track_name, arduino_display_width * 2, display_next_startpos);
 	}
-	if(squeezed.size() >= 8)
-		squeezed = squeeze(squeezed, 20);
+	if((int)squeezed.size() >= arduino_display_width)
+		squeezed = squeeze(squeezed, arduino_display_width * 2);
 	arduino_set_text(squeezed);
 }
 
@@ -577,7 +579,7 @@ void handle_display()
 		return;
 	update_display();
 	if(!minimize_display_updates)
-		display_next_startpos += 8;
+		display_next_startpos += arduino_display_width;
 }
 
 void eat_all_mpv_events()
@@ -995,7 +997,7 @@ int main(int argc, char *argv[])
 {
 	signal(SIGINT, sigint_handler);
 
-	const char opts[100] = "hs:t:d:S:m:D:U";
+	const char opts[100] = "hs:t:d:S:m:D:UW:";
 	const char usagefmt[1000] =
 			"Usage: %s [OPTION]...\n"
 			"  -h                   Show this help\n"
@@ -1006,6 +1008,7 @@ int main(int argc, char *argv[])
 			"  -m [path]            Static mount path; automounting is disabled if set and root privileges are not needed\n"
 			"  -D [mode]            Set arduino serial debug mode (off/raw/fancy)\n"
 			"  -U                   Minimize display updates\n"
+			"  -W [integer]         Set text display width\n"
 			;
 
 	int c;
@@ -1046,6 +1049,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'U':
 			minimize_display_updates = true;
+			break;
+		case 'W':
+			arduino_display_width = atoi(c55_optarg);
 			break;
 		default:
 			fprintf(stderr, "Invalid argument\n");

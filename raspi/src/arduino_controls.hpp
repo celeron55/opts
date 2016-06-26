@@ -5,6 +5,7 @@
 
 extern int arduino_serial_fd;
 extern ss_ arduino_serial_debug_mode;
+extern int arduino_display_width;
 
 static ss_ truncate(const ss_ &s, size_t len)
 {
@@ -12,8 +13,10 @@ static ss_ truncate(const ss_ &s, size_t len)
 	return s.substr(0, len);
 }
 
-static ss_ squeeze(const ss_ &s0, size_t len, size_t startpos=0, size_t try_len=8)
+static ss_ squeeze(const ss_ &s0, size_t len, size_t startpos=0, size_t try_len=SIZE_MAX)
 {
+	if(try_len == SIZE_MAX)
+		try_len = arduino_display_width;
 	ss_ s = s0;
 	for(size_t i=0; i<s.size(); i++)
 		s[i] = toupper(s[i]);
@@ -57,22 +60,24 @@ static void arduino_serial_write(const char *data, size_t len)
 static void arduino_set_text(const ss_ &text)
 {
 	char buf[30];
-	int l = snprintf(buf, 30, ">SET_TEXT:%s\r\n", cs(truncate(text, 8)));
+	int l = snprintf(buf, 30, ">SET_TEXT:%s\r\n",
+			cs(truncate(text, arduino_display_width)));
 	arduino_serial_write(buf, l);
 
 	if(arduino_serial_debug_mode == "fancy"){
-		printf("[%s]\n", cs(truncate(text, 8)));
+		printf("[%s]\n", cs(truncate(text, arduino_display_width)));
 	}
 }
 
 static void arduino_set_temp_text(const ss_ &text)
 {
 	char buf[30];
-	int l = snprintf(buf, 30, ">SET_TEMP_TEXT:%s\r\n", cs(truncate(text, 8)));
+	int l = snprintf(buf, 30, ">SET_TEMP_TEXT:%s\r\n",
+			cs(truncate(text, arduino_display_width)));
 	arduino_serial_write(buf, l);
 
 	if(arduino_serial_debug_mode == "fancy"){
-		printf("[[%s]]\n", cs(truncate(text, 8)));
+		printf("[[%s]]\n", cs(truncate(text, arduino_display_width)));
 	}
 }
 
