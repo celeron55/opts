@@ -1,3 +1,5 @@
 .*
 !.gitignore
 session.vim
+/player
+/saved_state*
