@@ -985,6 +985,15 @@ void handle_mount()
 		startup_delay = time(0);
 	} else if(startup_delay == -2){
 		// Inotify watchers have been initialized
+
+		// Still check once in a while because these systems are unreliable as
+		// fuck for whatever reason; they should probably be fixed though
+		static time_t last_timestamp = 0;
+		if(last_timestamp <= time(0) - 10){
+			last_timestamp = time(0);
+
+			handle_changed_partitions();
+		}
 	} else if(startup_delay < time(0) - 15){
 		startup_delay = -2;
 
