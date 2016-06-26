@@ -826,6 +826,7 @@ void setup()
 	} else {
 		power_off();
 	}
+
 	Serial.print(F("<MODE:"));
 	Serial.println(CONTROL_MODES[g_control_mode].name);
 }

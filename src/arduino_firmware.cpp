@@ -56,6 +56,11 @@ void arduino_firmware_update_if_needed(const ss_ &current_version)
 	printf("Updating arduino firmware from %s to %s\n",
 			cs(current_version), cs(version_h_version));
 
+	// Set this text so that the LCD will be showing it while the firmware is
+	// being uploaded and arduino reboots
+	arduino_set_temp_text("FW UP");
+	usleep(100000);
+
 	ss_ command = "avrdude -c arduino -p atmega328p -P"+arduino_serial_fd_path+
 			" -b57600 -V -U flash:w:arduino/.build_ano/nano/firmware.hex"+
 			" -q -l avrdude.log";
