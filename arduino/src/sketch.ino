@@ -32,6 +32,7 @@ enum ConfigOption {
 	CO_TREBLE,
 	CO_BENIS,
 	CO_PI_CYCLE,
+	CO_LCD_AND_BUTTONS_TEST,
 
 	CO_NUM_OPTIONS,
 };
@@ -232,16 +233,20 @@ void raspberry_handle_keys()
 		Serial.print(F("<MODE:"));
 		Serial.println(CONTROL_MODES[g_control_mode].name);
 	}
-	for(uint8_t i=0; i<30; i++){
-		if(i == 22 || i == 28)
-			continue;
-		if(lcd_is_key_pressed(g_current_keys, i) && !lcd_is_key_pressed(g_previous_keys, i)){
-			Serial.print(F("<KEY_PRESS:"));
-			Serial.println(i);
-		}
-		if(!lcd_is_key_pressed(g_current_keys, i) && lcd_is_key_pressed(g_previous_keys, i)){
-			Serial.print(F("<KEY_RELEASE:"));
-			Serial.println(i);
+	if(g_config_option != CO_LCD_AND_BUTTONS_TEST){
+		for(uint8_t i=0; i<30; i++){
+			if(i == 22 || i == 28)
+				continue;
+			if(lcd_is_key_pressed(g_current_keys, i) &&
+					!lcd_is_key_pressed(g_previous_keys, i)){
+				Serial.print(F("<KEY_PRESS:"));
+				Serial.println(i);
+			}
+			if(!lcd_is_key_pressed(g_current_keys, i) &&
+					lcd_is_key_pressed(g_previous_keys, i)){
+				Serial.print(F("<KEY_RELEASE:"));
+				Serial.println(i);
+			}
 		}
 	}
 }
@@ -485,7 +490,6 @@ void handle_encoder_value(int8_t rot)
 		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
 		char buf[10] = {0};
 		snprintf(buf, 10, "VOL %i    ", g_volume_controls.volume);
-		set_segments(g_display_data, 0, buf);
 		set_all_segments(g_temp_display_data, buf);
 		g_temp_display_data_timer = 1000;
 	} else if(g_config_option == CO_BASS){
@@ -505,7 +509,6 @@ void handle_encoder_value(int8_t rot)
 		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
 		char buf[10] = {0};
 		snprintf(buf, 10, "BASS %i    ", g_volume_controls.bass);
-		set_segments(g_display_data, 0, buf);
 		set_all_segments(g_temp_display_data, buf);
 		g_temp_display_data_timer = 1;
 	} else if(g_config_option == CO_TREBLE){
@@ -525,7 +528,6 @@ void handle_encoder_value(int8_t rot)
 		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
 		char buf[10] = {0};
 		snprintf(buf, 10, "TREB %i    ", g_volume_controls.treble);
-		set_segments(g_display_data, 0, buf);
 		set_all_segments(g_temp_display_data, buf);
 		g_temp_display_data_timer = 1;
 	} else if(g_config_option == CO_BENIS){
@@ -539,7 +541,6 @@ void handle_encoder_value(int8_t rot)
 		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
 		char buf[10] = {0};
 		snprintf(buf, 10, "BENIS %i", g_benis_mode_enabled);
-		set_segments(g_display_data, 0, buf);
 		set_all_segments(g_temp_display_data, buf);
 		g_temp_display_data_timer = 1;
 	} else if(g_config_option == CO_PI_CYCLE){
@@ -569,9 +570,31 @@ void handle_encoder_value(int8_t rot)
 		} else {
 			snprintf(buf, 10, "P C %i%", a);
 		}
-		set_segments(g_display_data, 0, buf);
 		set_all_segments(g_temp_display_data, buf);
 		g_temp_display_data_timer = 1;
+	} else if(g_config_option == CO_LCD_AND_BUTTONS_TEST){
+		g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+		static uint8_t lcd_i = 0;
+		lcd_i += rot;
+		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		bool key_shown = false;
+		for(uint8_t i=0; i<30; i++){
+			if(lcd_is_key_pressed(g_current_keys, i)){
+				char buf[10] = {0};
+				snprintf(buf, 10, "KEY %i", i);
+				set_all_segments(g_temp_display_data, buf);
+				g_temp_display_data_timer = 1;
+				key_shown = true;
+				break;
+			}
+		}
+		if(!key_shown){
+			char buf[10] = {0};
+			snprintf(buf, 10, "LCD %i", lcd_i);
+			set_all_segments(g_temp_display_data, buf);
+			g_temp_display_data_timer = 1;
+		}
+		g_temp_display_data[lcd_i/8] = 1 << (lcd_i % 8);
 	}
 }
 
@@ -634,12 +657,6 @@ void handle_encoder()
 	}
 
 	if(rot != 0){
-		/*g_debug_test_segment_i += rot;
-		Serial.println(g_debug_test_segment_i);
-		uint8_t a = g_debug_test_segment_i;
-		memset(g_display_data, 0, sizeof g_display_data);
-		g_display_data[a/8] = 1 << (a % 8);*/
-
 		handle_encoder_value(rot);
 	}
 
@@ -703,22 +720,8 @@ void display_special_stuff()
 		return;
 	}
 	if(g_config_menu_show_timer > 0){
-		if(g_config_option == CO_BASS){
-			handle_encoder_value(0);
-			return;
-		}
-		if(g_config_option == CO_TREBLE){
-			handle_encoder_value(0);
-			return;
-		}
-		if(g_config_option == CO_BENIS){
-			handle_encoder_value(0);
-			return;
-		}
-		if(g_config_option == CO_PI_CYCLE){
-			handle_encoder_value(0);
-			return;
-		}
+		handle_encoder_value(0);
+		return;
 	}
 	if(g_benis_mode_enabled && g_temp_display_data_timer == 0){
 		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
