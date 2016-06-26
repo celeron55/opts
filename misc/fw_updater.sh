@@ -61,6 +61,12 @@ while true; do
 
 		echo "Autosoitin software upgraded"
 
+		echo -ne ">SET_TEXT:SYNC\r\n" >&3
+
+		# Most importantly, this syncs the root filesystem containing the newly
+		# copied and built player
+		sync
+
 		echo -ne ">SET_TEXT:UPGRADED\r\n" >&3
 
 		sleep 1
