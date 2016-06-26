@@ -31,6 +31,7 @@ ss_ static_mount_path;
 ss_ arduino_serial_debug_mode = "off"; // off / raw / fancy
 int arduino_display_width = 8;
 bool minimize_display_updates = false;
+set_<ss_> enabled_log_sources;
 
 bool do_main_loop = true;
 mpv_handle *mpv = NULL;
@@ -305,6 +306,31 @@ void handle_control_playpause()
 	}
 }
 
+void load_and_play_current_track_from_start()
+{
+	Track track = get_track(current_media_content, current_cursor);
+
+	// Reset starting position
+	mpv_set_option_string(mpv, "start", "0");
+
+	// Play the file
+	const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
+	check_mpv_error(mpv_command(mpv, cmd));
+
+	// Check if the file actually even exists; if not, increment a
+	// counter of broken tracks and re-scan media at some point
+	if(access(track.path.c_str(), F_OK) == -1){
+		printf("This track has disappeared\n");
+		disappeared_tracks.insert(track.path);
+		if(disappeared_tracks.size() > get_total_tracks(current_media_content) / 10 ||
+				disappeared_tracks.size() >= 10){
+			printf("Too many disappeared tracks; re-scanning media\n");
+			void scan_current_mount();
+			scan_current_mount();
+		}
+	}
+}
+
 void refresh_track()
 {
 	void update_display();
@@ -323,25 +349,7 @@ void refresh_track()
 		if(playing_path == NULL || ss_(playing_path) != track.path){
 			printf("Playing path does not match current track; Switching track.\n");
 
-			// Reset starting position
-			mpv_set_option_string(mpv, "start", "0");
-
-			// Play the file
-			const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
-			check_mpv_error(mpv_command(mpv, cmd));
-
-			// Check if the file actually even exists; if not, increment a
-			// counter of broken tracks and re-scan media at some point
-			if(access(track.path.c_str(), F_OK) == -1){
-				printf("This track has disappeared\n");
-				disappeared_tracks.insert(track.path);
-				if(disappeared_tracks.size() > get_total_tracks(current_media_content) / 10 ||
-						disappeared_tracks.size() >= 10){
-					printf("Too many disappeared tracks; re-scanning media\n");
-					void scan_current_mount();
-					scan_current_mount();
-				}
-			}
+			load_and_play_current_track_from_start();
 		}
 	}
 }
@@ -364,7 +372,7 @@ void handle_control_next()
 	current_cursor.time_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-	refresh_track();
+	load_and_play_current_track_from_start();
 }
 
 void handle_control_prev()
@@ -373,7 +381,7 @@ void handle_control_prev()
 	current_cursor.time_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-	refresh_track();
+	load_and_play_current_track_from_start();
 }
 
 void handle_control_nextalbum()
@@ -386,7 +394,7 @@ void handle_control_nextalbum()
 	temp_display_album();
 
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-	refresh_track();
+	load_and_play_current_track_from_start();
 }
 
 void handle_control_prevalbum()
@@ -399,7 +407,7 @@ void handle_control_prevalbum()
 	temp_display_album();
 
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-	refresh_track();
+	load_and_play_current_track_from_start();
 }
 
 void handle_stdin()
@@ -408,7 +416,16 @@ void handle_stdin()
 	for(char c : stdin_stuff){
 		if(stdin_command_accu.put_char(c)){
 			ss_ command = stdin_command_accu.command();
-			if(command == "next" || command == "n"){
+			if(command == "help" || command == "h" || command == "?"){
+				printf("Commands:\n");
+				printf("  next, n\n");
+				printf("  prev, p\n");
+				printf("  nextalbum, N\n");
+				printf("  prevalbum, P\n");
+				printf("  pause, [space][enter]\n");
+				printf("  fwd, f\n");
+				printf("  bwd, b\n");
+			} else if(command == "next" || command == "n"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p"){
 				handle_control_prev();
@@ -588,7 +605,8 @@ void eat_all_mpv_events()
 		mpv_event *event = mpv_wait_event(mpv, 0);
 		if(event->event_id == MPV_EVENT_NONE)
 			break;
-		printf("MPV: %s (eaten)\n", mpv_event_name(event->event_id));
+		if(enabled_log_sources.count("mpv"))
+			printf("MPV: %s (eaten)\n", mpv_event_name(event->event_id));
 	}
 }
 
@@ -599,7 +617,8 @@ void wait_mpv_event(int event_id, int max_ms)
 			mpv_event *event = mpv_wait_event(mpv, 0);
 			if(event->event_id == MPV_EVENT_NONE)
 				break;
-			printf("MPV: %s (waited over)\n", mpv_event_name(event->event_id));
+			if(enabled_log_sources.count("mpv"))
+				printf("MPV: %s (waited over)\n", mpv_event_name(event->event_id));
 			if(event->event_id == event_id)
 				return;
 		}
@@ -613,7 +632,8 @@ void handle_mpv()
 		mpv_event *event = mpv_wait_event(mpv, 0);
 		if(event->event_id == MPV_EVENT_NONE)
 			break;
-		printf("MPV: %s\n", mpv_event_name(event->event_id));
+		if(enabled_log_sources.count("mpv"))
+			printf("MPV: %s\n", mpv_event_name(event->event_id));
 		if(event->event_id == MPV_EVENT_SHUTDOWN){
 			do_main_loop = false;
 		}
@@ -997,7 +1017,7 @@ int main(int argc, char *argv[])
 {
 	signal(SIGINT, sigint_handler);
 
-	const char opts[100] = "hs:t:d:S:m:D:UW:";
+	const char opts[100] = "hs:t:d:S:m:D:UW:l:";
 	const char usagefmt[1000] =
 			"Usage: %s [OPTION]...\n"
 			"  -h                   Show this help\n"
@@ -1009,6 +1029,7 @@ int main(int argc, char *argv[])
 			"  -D [mode]            Set arduino serial debug mode (off/raw/fancy)\n"
 			"  -U                   Minimize display updates\n"
 			"  -W [integer]         Set text display width\n"
+			"  -l [string]          Enable log source (eg. mpv)\n"
 			;
 
 	int c;
@@ -1052,6 +1073,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'W':
 			arduino_display_width = atoi(c55_optarg);
+			break;
+		case 'l':
+			enabled_log_sources.insert(c55_optarg);
 			break;
 		default:
 			fprintf(stderr, "Invalid argument\n");
