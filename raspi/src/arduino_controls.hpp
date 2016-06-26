@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 extern int arduino_serial_fd;
+extern ss_ arduino_serial_debug_mode;
 
 static ss_ truncate(const ss_ &s, size_t len)
 {
@@ -39,17 +40,39 @@ static ss_ squeeze(const ss_ &s0, size_t len, size_t startpos=0, size_t try_len=
 	return s.substr(startpos, len);
 }
 
+static void arduino_serial_write(const char *data, size_t len)
+{
+	if(arduino_serial_debug_mode == "raw" && data != NULL && len != 0){
+		printf("%s", cs(ss_(data, len)));
+	}
+	if(arduino_serial_fd != -1){
+		size_t r = write(arduino_serial_fd, data, len);
+		if(r != len){
+			printf("WARNING: Arduino serial didn't take the entire message\n");
+			// TODO: Maybe handle this properly
+		}
+	}
+}
+
 static void arduino_set_text(const ss_ &text)
 {
 	char buf[30];
 	int l = snprintf(buf, 30, ">SET_TEXT:%s\r\n", cs(truncate(text, 8)));
-	write(arduino_serial_fd, buf, l);
+	arduino_serial_write(buf, l);
+
+	if(arduino_serial_debug_mode == "fancy"){
+		printf("[%s]\n", cs(truncate(text, 8)));
+	}
 }
 
 static void arduino_set_temp_text(const ss_ &text)
 {
 	char buf[30];
 	int l = snprintf(buf, 30, ">SET_TEMP_TEXT:%s\r\n", cs(truncate(text, 8)));
-	write(arduino_serial_fd, buf, l);
+	arduino_serial_write(buf, l);
+
+	if(arduino_serial_debug_mode == "fancy"){
+		printf("[[%s]]\n", cs(truncate(text, 8)));
+	}
 }
 

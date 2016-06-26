@@ -632,7 +632,7 @@ void display_special_stuff()
 {
 	if(!g_amplifier_power_on && g_amplifier_real_power_off_delay > 0){
 		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
-		set_all_segments(g_temp_display_data, "SHUTDOWN");
+		set_all_segments(g_temp_display_data, "--------");
 		g_temp_display_data_timer = 1;
 		return;
 	}

@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <unistd.h>
+#include <signal.h>
 #include <fcntl.h>
 #include <termios.h>
 #include <errno.h>
@@ -26,6 +27,9 @@ ss_ saved_state_path = "saved_state";
 sv_<ss_> arduino_serial_paths;
 ss_ test_file_path;
 sv_<ss_> track_devices;
+ss_ static_mount_path;
+ss_ arduino_serial_debug_mode = "off"; // off / raw / fancy
+bool minimize_display_updates = false;
 
 bool do_main_loop = true;
 mpv_handle *mpv = NULL;
@@ -76,7 +80,6 @@ struct PlayCursor
 
 PlayCursor current_cursor;
 PlayCursor last_succesfully_playing_cursor;
-bool queued_seek_to_cursor = false;
 bool queued_pause = false;
 
 enum PauseMode {
@@ -253,9 +256,10 @@ void handle_control_play_test_file()
 void force_start_at_cursor()
 {
 	if(current_cursor.time_pos >= 0.001){
-		printf("Starting at %fs\n", current_cursor.time_pos);
+		printf("Force-starting at %fs\n", current_cursor.time_pos);
 		mpv_set_option_string(mpv, "start", cs(ftos(current_cursor.time_pos)));
 	} else {
+		printf("Force-starting at 0s\n");
 		mpv_set_option_string(mpv, "start", "");
 	}
 
@@ -266,6 +270,10 @@ void force_start_at_cursor()
 	Track track = get_track(current_media_content, current_cursor);
 	const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
 	check_mpv_error(mpv_command(mpv, cmd));
+
+	// Wait for the start-file event
+	void wait_mpv_event(int event_id, int max_ms);
+	wait_mpv_event(MPV_EVENT_START_FILE, 1000);
 
 	void refresh_track();
 	refresh_track();
@@ -398,19 +406,19 @@ void handle_stdin()
 	for(char c : stdin_stuff){
 		if(stdin_command_accu.put_char(c)){
 			ss_ command = stdin_command_accu.command();
-			if(command == "next"){
+			if(command == "next" || command == "n"){
 				handle_control_next();
-			} else if(command == "prev"){
+			} else if(command == "prev" || command == "p"){
 				handle_control_prev();
-			} else if(command == "nextalbum"){
+			} else if(command == "nextalbum" || command == "N"){
 				handle_control_nextalbum();
-			} else if(command == "prevalbum"){
+			} else if(command == "prevalbum" || command == "P"){
 				handle_control_prevalbum();
-			} else if(command == "pause"){
+			} else if(command == "pause" || command == " "){
 				handle_control_playpause();
-			} else if(command == "fwd"){
+			} else if(command == "fwd" || command == "f"){
 				mpv_command_string(mpv, "seek +30");
-			} else if(command == "bwd"){
+			} else if(command == "bwd" || command == "b"){
 				mpv_command_string(mpv, "seek -30");
 			} else if(command == "pos"){
 				double pos = 0;
@@ -481,7 +489,7 @@ void handle_hwcontrols()
 {
 	if(arduino_serial_fd == -1){
 		static time_t last_retry_time = 0;
-		if(last_retry_time < time(0) - 5){
+		if(last_retry_time < time(0) - 5 && !arduino_serial_paths.empty()){
 			last_retry_time = time(0);
 			printf("Retrying arduino serial\n");
 			try_open_arduino_serial();
@@ -543,21 +551,24 @@ void update_display()
 
 	if(current_media_content.albums.empty()){
 		arduino_set_text("NO MEDIA");
-	} else {
-		ss_ track_name = get_track_name(current_media_content, current_cursor);
-		if(track_name != display_last_shown_track_name){
-			display_last_shown_track_name = track_name;
-			display_next_startpos = 0;
-		}
-		ss_ squeezed = squeeze(track_name, 20, display_next_startpos);
-		if(squeezed == ""){
-			display_next_startpos = 0;
-			squeezed = squeeze(track_name, 20, display_next_startpos);
-		}
-		if(squeezed.size() >= 8)
-			squeezed = squeeze(squeezed, 20);
-		arduino_set_text(squeezed);
+		return;
 	}
+
+	ss_ track_name = get_track_name(current_media_content, current_cursor);
+	if(minimize_display_updates && track_name == display_last_shown_track_name)
+		return;
+	if(track_name != display_last_shown_track_name){
+		display_last_shown_track_name = track_name;
+		display_next_startpos = 0;
+	}
+	ss_ squeezed = squeeze(track_name, 20, display_next_startpos);
+	if(squeezed == ""){
+		display_next_startpos = 0;
+		squeezed = squeeze(track_name, 20, display_next_startpos);
+	}
+	if(squeezed.size() >= 8)
+		squeezed = squeeze(squeezed, 20);
+	arduino_set_text(squeezed);
 }
 
 void handle_display()
@@ -565,7 +576,8 @@ void handle_display()
 	if(display_update_timestamp > time(0) - 1)
 		return;
 	update_display();
-	display_next_startpos += 8;
+	if(!minimize_display_updates)
+		display_next_startpos += 8;
 }
 
 void eat_all_mpv_events()
@@ -574,6 +586,22 @@ void eat_all_mpv_events()
 		mpv_event *event = mpv_wait_event(mpv, 0);
 		if(event->event_id == MPV_EVENT_NONE)
 			break;
+		printf("MPV: %s (eaten)\n", mpv_event_name(event->event_id));
+	}
+}
+
+void wait_mpv_event(int event_id, int max_ms)
+{
+	for(int i=0; i<max_ms/5; i++){
+		for(;;){
+			mpv_event *event = mpv_wait_event(mpv, 0);
+			if(event->event_id == MPV_EVENT_NONE)
+				break;
+			printf("MPV: %s (waited over)\n", mpv_event_name(event->event_id));
+			if(event->event_id == event_id)
+				return;
+		}
+		usleep(5000);
 	}
 }
 
@@ -588,13 +616,11 @@ void handle_mpv()
 			do_main_loop = false;
 		}
 		if(event->event_id == MPV_EVENT_IDLE){
-			if(!queued_seek_to_cursor){
-				current_cursor.track_i++;
-				current_cursor.time_pos = 0;
-				cursor_bound_wrap(current_media_content, current_cursor);
-				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-				refresh_track();
-			}
+			current_cursor.track_i++;
+			current_cursor.time_pos = 0;
+			cursor_bound_wrap(current_media_content, current_cursor);
+			printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+			refresh_track();
 		}
 		if(event->event_id == MPV_EVENT_FILE_LOADED){
 			if(queued_pause){
@@ -770,6 +796,16 @@ ss_ get_device_mountpoint(const ss_ &devname0)
 
 void handle_changed_partitions()
 {
+	if(static_mount_path != ""){
+		if(current_mount_path != static_mount_path){
+			printf("Using static mount path %s\n", cs(static_mount_path));
+			current_mount_device = "dummy";
+			current_mount_path = static_mount_path;
+			scan_current_mount();
+		}
+		return;
+	}
+
 	if(current_mount_device != ""){
 		if(!check_partition_exists(current_mount_device)){
 			static time_t umount_last_failed_timestamp = 0;
@@ -879,6 +915,9 @@ bool partitions_changed = false;
 
 void handle_mount()
 {
+	if(static_mount_path != "")
+		return;
+
 	// Calls callbacks; eg. handle_changed_partitions()
 	for(auto fd : partitions_watch->get_fds()){
 		partitions_watch->report_fd(fd);
@@ -945,9 +984,18 @@ void handle_periodic_save()
 	save_stuff();
 }
 
+void sigint_handler(int _)
+{
+	printf("SIGINT\n");
+	save_stuff();
+	do_main_loop = false;
+}
+
 int main(int argc, char *argv[])
 {
-	const char opts[100] = "hs:t:d:S:";
+	signal(SIGINT, sigint_handler);
+
+	const char opts[100] = "hs:t:d:S:m:D:U";
 	const char usagefmt[1000] =
 			"Usage: %s [OPTION]...\n"
 			"  -h                   Show this help\n"
@@ -955,6 +1003,9 @@ int main(int argc, char *argv[])
 			"  -t [path]            Test file path\n"
 			"  -d [dev1,dev2,...]   Block devices to track and mount (eg. sdc)\n"
 			"  -S [path]            Saved state path\n"
+			"  -m [path]            Static mount path; automounting is disabled if set and root privileges are not needed\n"
+			"  -D [mode]            Set arduino serial debug mode (off/raw/fancy)\n"
+			"  -U                   Minimize display updates\n"
 			;
 
 	int c;
@@ -987,11 +1038,32 @@ int main(int argc, char *argv[])
 		case 'S':
 			saved_state_path = c55_optarg;
 			break;
+		case 'm':
+			static_mount_path = c55_optarg;
+			break;
+		case 'D':
+			arduino_serial_debug_mode = c55_optarg;
+			break;
+		case 'U':
+			minimize_display_updates = true;
+			break;
 		default:
 			fprintf(stderr, "Invalid argument\n");
 			fprintf(stderr, usagefmt, argv[0]);
 			return 1;
 		}
+	}
+
+	if(track_devices.empty() && static_mount_path.empty()){
+		printf("Use -d or -m\n");
+		return 1;
+	}
+
+	if(arduino_serial_debug_mode != "off" && arduino_serial_debug_mode != "raw" &&
+			arduino_serial_debug_mode != "fancy"){
+		printf("Invalid arduino serial debug mode (-D) (%s)\n",
+				cs(arduino_serial_debug_mode));
+		return 1;
 	}
 
 	load_stuff();
