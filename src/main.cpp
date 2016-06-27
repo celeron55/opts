@@ -187,20 +187,22 @@ enum PauseMode {
 };
 PauseMode current_pause_mode = PM_PLAY;
 
-/*enum PlayHealthinessStatus {
-	PHS_PLAYING,
-	PHS_MAYBE_PLAYING,
-	PHS_FUCKED,
-};*/
+enum StatefulInputMode {
+	SIM_NONE,
+	SIM_TRACK_NUMBER,
+	SIM_ALBUM_NUMBER,
+
+	SIM_NUM_MODES,
+};
+
+StatefulInputMode stateful_input_mode = SIM_NONE;
+time_t stateful_input_mode_active_timestamp = 0;
+CommandAccumulator<10> stateful_input_accu;
 
 bool is_track_playing_fine()
 {
 	if(!track_was_loaded){
 		return false;
-	}
-
-	if(track_progress_mode == TPM_REPEAT_TRACK){
-		return true;
 	}
 
 	int64_t stream_end = 0;
@@ -811,6 +813,131 @@ void handle_control_shufflerepeat()
 	handle_changed_track_progress_mode();
 }
 
+void handle_control_track_number(int track_n)
+{
+	if(track_n < 1){
+		printf("handle_control_track_number(): track_n = %i < 1\n", track_n);
+		arduino_set_temp_text("PASS");
+		return;
+	}
+	int track_i = track_n - 1;
+
+	auto &cursor = current_cursor;
+	auto &mc = current_media_content;
+	if(cursor.album_i >= (int)mc.albums.size()){
+		printf("handle_control_track_number(): album_i %i doesn't exist\n", cursor.album_i);
+		arduino_set_temp_text("PASS A");
+		return;
+	}
+	const Album &album = mc.albums[cursor.album_i];
+	if(cursor.track_i >= (int)album.tracks.size()){
+		printf("handle_control_track_number(): track_i %i doesn't exist\n", track_i);
+		arduino_set_temp_text("PASS T");
+		return;
+	}
+
+	current_cursor.track_i = track_i;
+	current_cursor.time_pos = 0;
+	current_cursor.stream_pos = 0;
+	cursor_bound_wrap(current_media_content, current_cursor);
+	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+	load_and_play_current_track_from_start();
+}
+
+void handle_control_album_number(int album_n)
+{
+	if(album_n < 1){
+		printf("handle_control_album_number(): album_n = %i < 1\n", album_n);
+		arduino_set_temp_text("PASS");
+		return;
+	}
+	int album_i = album_n - 1;
+
+	auto &cursor = current_cursor;
+	auto &mc = current_media_content;
+	if(cursor.album_i >= (int)mc.albums.size()){
+		printf("handle_control_album_number(): album_i %i doesn't exist\n", album_i);
+		arduino_set_temp_text("PASS");
+		return;
+	}
+
+	current_cursor.album_i = album_i;
+	current_cursor.track_i = 0;
+	current_cursor.time_pos = 0;
+	current_cursor.stream_pos = 0;
+	cursor_bound_wrap(current_media_content, current_cursor);
+
+	temp_display_album();
+
+	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+	load_and_play_current_track_from_start();
+}
+
+void update_display();
+
+void handle_control_stateful_input_mode()
+{
+	if(stateful_input_mode < SIM_NUM_MODES - 1)
+		stateful_input_mode = (StatefulInputMode)(stateful_input_mode + 1);
+	else
+		stateful_input_mode = (StatefulInputMode)0;
+
+	update_display();
+}
+
+void handle_control_stateful_input_mode_input(char input_char)
+{
+	if(stateful_input_accu.put_char(input_char)){
+		ss_ command = stateful_input_accu.command();
+		printf("Stateful input command: %s\n", cs(command));
+		if(command.size() == 0)
+			return;
+		int input_number = stoi(command, -1);
+		if(input_number == -1)
+			return;
+		switch(stateful_input_mode){
+		case SIM_TRACK_NUMBER:
+			stateful_input_accu.reset();
+			handle_control_track_number(input_number);
+			break;
+		case SIM_ALBUM_NUMBER:
+			stateful_input_accu.reset();
+			handle_control_album_number(input_number);
+			break;
+		case SIM_NONE:
+		case SIM_NUM_MODES:
+			break;
+		}
+	}
+	update_display();
+}
+
+void handle_control_stateful_input_enter()
+{
+	handle_control_stateful_input_mode_input('\r');
+}
+
+void handle_control_stateful_input_cancel()
+{
+	stateful_input_accu.reset();
+	stateful_input_mode = SIM_NONE;
+	update_display();
+}
+
+void update_stateful_input()
+{
+}
+
+void handle_control_input_digit(int input_digit)
+{
+	if(stateful_input_mode != SIM_NONE){
+		return handle_control_stateful_input_mode_input('0'+input_digit);
+	}
+
+	arduino_set_temp_text(
+			itos(current_cursor.album_i+1)+"-"+itos(current_cursor.track_i+1));
+}
+
 void handle_stdin()
 {
 	ss_ stdin_stuff = read_any(0); // 0=stdin
@@ -864,31 +991,43 @@ void handle_stdin()
 
 void handle_key_press(int key)
 {
-	if(key == 21){
-		handle_control_play_test_file();
-		return;
-	}
 	if(key == 24){
+		if(stateful_input_mode != SIM_NONE)
+			handle_control_stateful_input_cancel();
 		handle_control_playpause();
 		return;
 	}
 	if(key == 12){
-		handle_control_next();
+		if(stateful_input_mode != SIM_NONE)
+			handle_control_stateful_input_enter();
+		else
+			handle_control_next();
 		return;
 	}
 	if(key == 27){
-		handle_control_prev();
+		if(stateful_input_mode != SIM_NONE)
+			handle_control_stateful_input_cancel();
+		else
+			handle_control_prev();
 		return;
 	}
 	if(key == 23){
-		handle_control_nextalbum();
+		if(stateful_input_mode != SIM_NONE)
+			handle_control_stateful_input_enter();
+		else
+			handle_control_nextalbum();
 		return;
 	}
 	if(key == 29){
-		handle_control_prevalbum();
+		if(stateful_input_mode != SIM_NONE)
+			handle_control_stateful_input_cancel();
+		else
+			handle_control_prevalbum();
 		return;
 	}
 	if(key == 17){ // Upmost center
+		if(stateful_input_mode != SIM_NONE)
+			handle_control_stateful_input_cancel();
 		handle_control_shufflerepeat();
 		return;
 	}
@@ -896,24 +1035,31 @@ void handle_key_press(int key)
 		return;
 	}
 	if(key == 13){ // Right lower
+		handle_control_stateful_input_mode();
 		return;
 	}
 	if(key == 21){ // 1
+		handle_control_input_digit(1);
 		return;
 	}
 	if(key == 16){ // 2
+		handle_control_input_digit(2);
 		return;
 	}
 	if(key == 10){ // 3
+		handle_control_input_digit(3);
 		return;
 	}
 	if(key == 15){ // 4
+		handle_control_input_digit(4);
 		return;
 	}
 	if(key == 20){ // 5
+		handle_control_input_digit(5);
 		return;
 	}
 	if(key == 25){ // 6
+		handle_control_input_digit(6);
 		return;
 	}
 }
@@ -943,6 +1089,8 @@ void try_open_arduino_serial()
 
 void handle_hwcontrols()
 {
+	update_stateful_input();
+
 	if(arduino_serial_fd == -1){
 		static time_t last_retry_time = 0;
 		if(last_retry_time < time(0) - 5 && !arduino_serial_paths.empty()){
@@ -1022,9 +1170,34 @@ void handle_hwcontrols()
 	}
 }
 
+void display_stateful_input()
+{
+	ss_ current_input;
+	for(size_t i=0; i<stateful_input_accu.next_i; i++){
+		current_input += stateful_input_accu.buffer[i];
+	}
+	switch(stateful_input_mode){
+	case SIM_TRACK_NUMBER:
+		arduino_set_text(current_input + (time(0)%2?"_":" ") + " TRACK");
+		break;
+	case SIM_ALBUM_NUMBER:
+		arduino_set_text(current_input + (time(0)%2?"_":" ") + " ALBUM");
+		break;
+	case SIM_NONE:
+	case SIM_NUM_MODES:
+		arduino_set_text("ERROR");
+		break;
+	}
+}
+
 void update_display()
 {
 	display_update_timestamp = time(0);
+
+	if(stateful_input_mode != SIM_NONE){
+		display_stateful_input();
+		return;
+	}
 
 	if(current_media_content.albums.empty()){
 		arduino_set_text("NO MEDIA");
@@ -1144,7 +1317,7 @@ void handle_mpv()
 			do_main_loop = false;
 		}
 		if(event->event_id == MPV_EVENT_IDLE){
-			//do_something_instead_of_idle();
+			do_something_instead_of_idle();
 		}
 		if(event->event_id == MPV_EVENT_FILE_LOADED){
 			track_was_loaded = true;
@@ -1161,6 +1334,11 @@ void handle_mpv()
 				check_mpv_error(mpv_command_string(mpv, "pause"));
 				arduino_set_temp_text("PAUSE");
 				current_pause_mode = PM_PAUSE;
+			}
+		}
+		if(event->event_id == MPV_EVENT_END_FILE){
+			if(track_progress_mode == TPM_REPEAT_TRACK){
+				num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track = 0;
 			}
 		}
 	}
