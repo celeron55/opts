@@ -635,6 +635,8 @@ void handle_control_playpause()
 		} else {
 			arduino_set_temp_text("RESUME");
 		}
+		void arduino_set_extra_segments();
+		arduino_set_extra_segments();
 	} else {
 		// No track is loaded; load from cursor
 		force_start_at_cursor();
@@ -723,6 +725,9 @@ void arduino_set_extra_segments()
 		break;
 	case TPM_NUM_MODES:
 		break;
+	}
+	if(current_pause_mode == PM_PAUSE){
+		extra_segment_flags |= (1<<DISPLAY_FLAG_PAUSE);
 	}
 	arduino_serial_write(">EXTRA_SEGMENTS:"+itos(extra_segment_flags)+"\r\n");
 }
@@ -1334,6 +1339,7 @@ void handle_mpv()
 				check_mpv_error(mpv_command_string(mpv, "pause"));
 				arduino_set_temp_text("PAUSE");
 				current_pause_mode = PM_PAUSE;
+				arduino_set_extra_segments();
 			}
 		}
 		if(event->event_id == MPV_EVENT_END_FILE){

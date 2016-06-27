@@ -203,7 +203,7 @@ void render_raspberry_extras(uint8_t *data)
 		}
 	}
 	static const uint8_t DISPLAY_FLAG_SEGMENTS[] = {
-		111, 115, 127, 130, 131,
+		111, 115, 127, 130, 131, 99,
 	};
 	for(uint8_t i=0; i<sizeof DISPLAY_FLAG_SEGMENTS; i++){
 		uint8_t a = DISPLAY_FLAG_SEGMENTS[i];
