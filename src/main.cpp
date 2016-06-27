@@ -72,6 +72,7 @@ enum TrackFindStrategyStep {
 };
 // Track is switched only after this strategy is executed
 const TrackFindStrategyStep TRACK_FIND_STRATEGY[] = {
+	TFSS_WAIT_2S,
 	TFSS_LOADFILE,
 	TFSS_WAIT_2S,
 	TFSS_SCAN_CURRENT_MOUNT,
@@ -198,6 +199,10 @@ bool is_track_playing_fine()
 		return false;
 	}
 
+	if(track_progress_mode == TPM_REPEAT_TRACK){
+		return true;
+	}
+
 	int64_t stream_end = 0;
 	mpv_get_property(mpv, "stream-end", MPV_FORMAT_INT64, &stream_end);
 	// Don't care for <50kB files
@@ -224,6 +229,10 @@ bool is_track_playing_fine()
 
 bool is_track_at_natural_end()
 {
+	if(track_progress_mode == TPM_REPEAT_TRACK){
+		return false;
+	}
+
 	if(!track_was_loaded){
 		printf("is_track_at_natural_end(): !track_was_loaded -> false\n");
 		return false;
@@ -292,9 +301,6 @@ void load_stuff()
 	last_succesfully_playing_cursor.track_name = f.next("\n");
 
 	current_cursor = last_succesfully_playing_cursor;
-
-	void handle_changed_track_progress_mode();
-	handle_changed_track_progress_mode();
 
 	if(queued_pause){
 		printf("Queuing pause\n");
@@ -568,7 +574,7 @@ void force_start_at_cursor()
 		mpv_set_option_string(mpv, "start", cs(ftos(current_cursor.time_pos)));
 	} else {
 		printf("Force-starting at 0s\n");
-		mpv_set_option_string(mpv, "start", "");
+		mpv_set_option_string(mpv, "start", "#1");
 	}
 
 	void eat_all_mpv_events();
@@ -638,7 +644,7 @@ void load_and_play_current_track_from_start()
 	Track track = get_track(current_media_content, current_cursor);
 
 	// Reset starting position
-	mpv_set_option_string(mpv, "start", "0");
+	mpv_set_option_string(mpv, "start", "#1");
 
 	// Play the file
 	const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
@@ -782,6 +788,13 @@ void handle_changed_track_progress_mode()
 		arduino_set_temp_text("NOT IMPL");
 	} else {
 		arduino_set_temp_text(mode_s);
+	}
+
+	// Seamless looping!
+	if(track_progress_mode == TPM_REPEAT_TRACK){
+		mpv_set_property_string(mpv, "loop", "inf");
+	} else {
+		mpv_set_property_string(mpv, "loop", "no");
 	}
 
 	void arduino_set_extra_segments();
@@ -1131,7 +1144,7 @@ void handle_mpv()
 			do_main_loop = false;
 		}
 		if(event->event_id == MPV_EVENT_IDLE){
-			do_something_instead_of_idle();
+			//do_something_instead_of_idle();
 		}
 		if(event->event_id == MPV_EVENT_FILE_LOADED){
 			track_was_loaded = true;
@@ -1180,6 +1193,10 @@ void handle_mpv()
 				arduino_serial_write(">PROGRESS:"+
 						itos(stream_pos * 255 / current_track_stream_end)+"\r\n");
 			}
+
+			// Reset starting position so that if this track is being looped, it
+			// will start at the beginning
+			mpv_set_option_string(mpv, "start", "#1");
 		}
 	}
 
@@ -1666,6 +1683,8 @@ int main(int argc, char *argv[])
     mpv_set_option_string(mpv, "vo", "null");
 
     check_mpv_error(mpv_initialize(mpv));
+
+	handle_changed_track_progress_mode();
 
 	printf("Doing initial partition scan\n");
 	handle_changed_partitions();
