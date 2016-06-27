@@ -29,7 +29,7 @@ ss_ saved_state_path = "saved_state";
 sv_<ss_> arduino_serial_paths;
 ss_ test_file_path;
 sv_<ss_> track_devices;
-ss_ static_mount_path;
+sv_<ss_> static_mount_paths;
 ss_ arduino_serial_debug_mode = "off"; // off / raw / fancy
 int arduino_display_width = 8;
 bool minimize_display_updates = false;
@@ -1518,7 +1518,14 @@ void scan_current_mount()
 	//disappeared_tracks.clear();
 	current_media_content.albums.clear();
 
-	scan_directory("root", current_mount_path, current_media_content.albums);
+	if(!static_mount_paths.empty()){
+		int n = 1;
+		for(const ss_ &path : static_mount_paths){
+			scan_directory("root_"+itos(n++), path, current_media_content.albums);
+		}
+	} else {
+		scan_directory("root", current_mount_path, current_media_content.albums);
+	}
 
 	printf("Scanned %zu albums.\n", current_media_content.albums.size());
 
@@ -1605,11 +1612,11 @@ ss_ get_device_mountpoint(const ss_ &devname0)
 
 void handle_changed_partitions()
 {
-	if(static_mount_path != ""){
-		if(current_mount_path != static_mount_path){
-			printf("Using static mount path %s\n", cs(static_mount_path));
+	if(!static_mount_paths.empty()){
+		if(current_mount_path != static_mount_paths[0]){
+			printf("Using static mount paths; primary %s\n", cs(static_mount_paths[0]));
 			current_mount_device = "dummy";
-			current_mount_path = static_mount_path;
+			current_mount_path = static_mount_paths[0];
 			scan_current_mount();
 		}
 		return;
@@ -1724,7 +1731,7 @@ bool partitions_changed = false;
 
 void handle_mount()
 {
-	if(static_mount_path != "")
+	if(!static_mount_paths.empty())
 		return;
 
 	// Calls callbacks; eg. handle_changed_partitions()
@@ -1828,7 +1835,7 @@ int main(int argc, char *argv[])
 			"  -t [path]            Test file path\n"
 			"  -d [dev1,dev2,...]   Block devices to track and mount (eg. sdc)\n"
 			"  -S [path]            Saved state path\n"
-			"  -m [path]            Static mount path; automounting is disabled if set and root privileges are not needed\n"
+			"  -m [path]            Static mount path; automounting is disabled if set and root privileges are not needed; multiple allowed\n"
 			"  -D [mode]            Set arduino serial debug mode (off/raw/fancy)\n"
 			"  -U                   Minimize display updates\n"
 			"  -W [integer]         Set text display width\n"
@@ -1866,7 +1873,7 @@ int main(int argc, char *argv[])
 			saved_state_path = c55_optarg;
 			break;
 		case 'm':
-			static_mount_path = c55_optarg;
+			static_mount_paths.push_back(c55_optarg);
 			break;
 		case 'D':
 			arduino_serial_debug_mode = c55_optarg;
@@ -1887,7 +1894,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if(track_devices.empty() && static_mount_path.empty()){
+	if(track_devices.empty() && static_mount_paths.empty()){
 		printf("Use -d or -m\n");
 		return 1;
 	}
