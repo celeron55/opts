@@ -421,8 +421,8 @@ ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
 	if(current_media_content.albums.empty())
 		return "No media";
 
-	ss_ s = "Album "+itos(cursor.album_i)+" ("+get_album_name(mc, cursor)+
-			"), track "+itos(cursor.track_i)+" ("+get_track_name(mc, cursor)+")"+
+	ss_ s = "Album #"+itos(cursor.album_i+1)+" ("+get_album_name(mc, cursor)+
+			"), track #"+itos(cursor.track_i+1)+" ("+get_track_name(mc, cursor)+")"+
 			(cursor.time_pos != 0.0 ? (", pos "+ftos(cursor.time_pos)+"s") : ss_());
 	if(get_track_name(mc, cursor) != cursor.track_name)
 		s += ", should be track ("+cursor.track_name+")";
