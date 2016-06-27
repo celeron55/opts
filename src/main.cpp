@@ -266,12 +266,14 @@ bool is_track_at_natural_end()
 	}
 
 	if(!track_was_loaded){
-		printf("is_track_at_natural_end(): !track_was_loaded -> false\n");
+		if(enabled_log_sources.count("debug"))
+			printf("is_track_at_natural_end(): !track_was_loaded -> false\n");
 		return false;
 	}
 
 	if(current_track_stream_end == 0){
-		printf("is_track_at_natural_end(): current_track_stream_end == 0 -> false\n");
+		if(enabled_log_sources.count("debug"))
+			printf("is_track_at_natural_end(): current_track_stream_end == 0 -> false\n");
 		return false;
 	}
 
@@ -279,9 +281,11 @@ bool is_track_at_natural_end()
 
 	bool is = (stream_pos >= current_track_stream_end * 0.9 - 5);
 
-	printf("is_track_at_natural_end(): stream_pos=%" PRId64
-			", current_track_stream_end=%" PRId64 " -> %s\n",
-			stream_pos, current_track_stream_end, is?"true":"false");
+	if(enabled_log_sources.count("debug")){
+		printf("is_track_at_natural_end(): stream_pos=%" PRId64
+				", current_track_stream_end=%" PRId64 " -> %s\n",
+				stream_pos, current_track_stream_end, is?"true":"false");
+	}
 	return is;
 }
 
