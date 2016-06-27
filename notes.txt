@@ -1,3 +1,10 @@
 sudo apt-get install libmpv-dev
 sudo apt-get install avrdude
 
+Nimiehdotuksia:
+- opts: Over Powered Track Switch
+- optracksw: Over Powered Track Switch
+- opst: Over Powered Switch Track
+- tsop: Track Switch Over Powered
+- trackswop: Track Switch Over Powered
+- mopd: Music Over Powered 'Dromeda
