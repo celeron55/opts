@@ -990,6 +990,15 @@ void handle_control_search(const ss_ &searchstring)
 	}
 }
 
+void handle_control_random_album()
+{
+	int album_i = rand() % current_media_content.albums.size();
+	printf("Picking random album %i\n", album_i);
+	current_cursor.album_i = album_i;
+	current_cursor.track_i = 0;
+	start_at_relative_track(0, 0, true);
+}
+
 void handle_stdin()
 {
 	ss_ stdin_stuff = read_any(0); // 0=stdin
@@ -1009,6 +1018,9 @@ void handle_stdin()
 				printf("  pos\n");
 				printf("  save\n");
 				printf("  /<string> (search)\n");
+				printf("  album <n>\n");
+				printf("  track <n>\n");
+				printf("  randomalbum, ra, r\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
@@ -1036,6 +1048,14 @@ void handle_stdin()
 			} else if(command.size() >= 2 && command.substr(0, 1) == "/"){
 				ss_ searchstring = command.substr(1);
 				handle_control_search(searchstring);
+			} else if(command.size() >= 6 && command.substr(0, 6) == "album "){
+				int album_n = stoi(command.substr(6), -1);
+				handle_control_album_number(album_n);
+			} else if(command.size() >= 6 && command.substr(0, 6) == "track "){
+				int track_n = stoi(command.substr(6), -1);
+				handle_control_track_number(track_n);
+			} else if(command == "randomalbum" || command == "ra" || command == "r"){
+				handle_control_random_album();
 			} else if(command.size() >= 9 && command.substr(0, 9) == "keypress "){
 				int key = stoi(command.substr(9), -1);
 				if(key != -1){
@@ -1100,6 +1120,7 @@ void handle_key_press(int key)
 		return;
 	}
 	if(key == 18){ // Right upper
+		handle_control_random_album();
 		return;
 	}
 	if(key == 13){ // Right lower
@@ -1861,6 +1882,7 @@ int main(int argc, char *argv[])
 {
 	signal(SIGINT, sigint_handler);
 	startup_timestamp = time(0);
+	srand(time(0));
 
 	const char opts[100] = "hs:d:S:m:D:UW:l:";
 	const char usagefmt[1000] =
