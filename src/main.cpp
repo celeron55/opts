@@ -548,15 +548,6 @@ ss_ read_any(int fd, bool *dst_error=NULL)
 	}
 }
 
-void handle_control_play_test_file()
-{
-	printf("Playing test file \"%s\"\n", cs(test_file_path));
-	const char *cmd[] = {"loadfile", test_file_path.c_str(), NULL};
-	check_mpv_error(mpv_command(mpv, cmd));
-
-	on_loadfile(0, "test file");
-}
-
 void force_start_at_cursor()
 {
 	printf("Force-start at cursor\n");
@@ -943,6 +934,60 @@ void handle_control_input_digit(int input_digit)
 			itos(current_cursor.album_i+1)+"-"+itos(current_cursor.track_i+1));
 }
 
+void handle_control_search(const ss_ &searchstring)
+{
+	printf("Searching for \"%s\"...\n", cs(searchstring));
+	auto &mc = current_media_content;
+	if(mc.albums.empty()){
+		printf("Cannot search: no media\n");
+		return;
+	}
+	// Start at current cursor + 1 and loop from end to beginning
+	PlayCursor cursor = current_cursor;
+	cursor.track_i++;
+	cursor_bound_wrap(mc, cursor);
+	for(;;){
+		auto &album = mc.albums[cursor.album_i];
+		for(;;){
+			if(cursor.track_i == current_cursor.track_i &&
+					cursor.album_i == current_cursor.album_i){
+				printf("Not found\n");
+				return;
+			}
+			auto &track = album.tracks[cursor.track_i];
+			//printf("track.display_name: %s\n", cs(track.display_name));
+			if(strcasestr(track.display_name.c_str(), searchstring.c_str())){
+				printf("Found track\n");
+				current_cursor = cursor;
+				current_cursor.time_pos = 0;
+				current_cursor.stream_pos = 0;
+				cursor_bound_wrap(current_media_content, current_cursor);
+				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+				load_and_play_current_track_from_start();
+				return;
+			}
+			cursor.track_i++;
+			if(cursor.track_i >= (int)album.tracks.size())
+				break;
+		}
+		cursor.track_i = 0;
+		//printf("album.name: %s\n", cs(album.name));
+		if(strcasestr(album.name.c_str(), searchstring.c_str())){
+			printf("Found album\n");
+			current_cursor = cursor;
+			current_cursor.time_pos = 0;
+			current_cursor.stream_pos = 0;
+			cursor_bound_wrap(current_media_content, current_cursor);
+			printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+			load_and_play_current_track_from_start();
+			return;
+		}
+		cursor.album_i++;
+		if(cursor.album_i >= (int)mc.albums.size())
+			cursor.album_i = 0;
+	}
+}
+
 void handle_stdin()
 {
 	ss_ stdin_stuff = read_any(0); // 0=stdin
@@ -961,6 +1006,7 @@ void handle_stdin()
 				printf("  shufflerepeat, sf\n");
 				printf("  pos\n");
 				printf("  save\n");
+				printf("  /<string> (search)\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
@@ -985,8 +1031,9 @@ void handle_stdin()
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "save"){
 				save_stuff();
-			} else if(command == "test"){
-				handle_control_play_test_file();
+			} else if(command.size() >= 2 && command.substr(0, 1) == "/"){
+				ss_ searchstring = command.substr(1);
+				handle_control_search(searchstring);
 			} else {
 				printf("Invalid command: \"%s\"\n", cs(command));
 			}
