@@ -764,6 +764,7 @@ void handle_control_next()
 	current_cursor.time_pos = 0;
 	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
+	current_cursor.track_name = get_track_name(current_media_content, current_cursor);
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	load_and_play_current_track_from_start();
 }
@@ -774,6 +775,7 @@ void handle_control_prev()
 	current_cursor.time_pos = 0;
 	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
+	current_cursor.track_name = get_track_name(current_media_content, current_cursor);
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	load_and_play_current_track_from_start();
 }
@@ -785,6 +787,7 @@ void handle_control_nextalbum()
 	current_cursor.time_pos = 0;
 	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
+	current_cursor.track_name = get_track_name(current_media_content, current_cursor);
 
 	temp_display_album();
 
@@ -799,6 +802,7 @@ void handle_control_prevalbum()
 	current_cursor.time_pos = 0;
 	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
+	current_cursor.track_name = get_track_name(current_media_content, current_cursor);
 
 	temp_display_album();
 
@@ -871,6 +875,7 @@ void handle_control_track_number(int track_n)
 	current_cursor.time_pos = 0;
 	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
+	current_cursor.track_name = get_track_name(current_media_content, current_cursor);
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	load_and_play_current_track_from_start();
 }
@@ -897,6 +902,7 @@ void handle_control_album_number(int album_n)
 	current_cursor.time_pos = 0;
 	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
+	current_cursor.track_name = get_track_name(current_media_content, current_cursor);
 
 	temp_display_album();
 
@@ -997,6 +1003,7 @@ void handle_control_search(const ss_ &searchstring)
 				current_cursor.time_pos = 0;
 				current_cursor.stream_pos = 0;
 				cursor_bound_wrap(current_media_content, current_cursor);
+				current_cursor.track_name = get_track_name(current_media_content, current_cursor);
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 				load_and_play_current_track_from_start();
 				return;
@@ -1013,6 +1020,7 @@ void handle_control_search(const ss_ &searchstring)
 			current_cursor.time_pos = 0;
 			current_cursor.stream_pos = 0;
 			cursor_bound_wrap(current_media_content, current_cursor);
+			current_cursor.track_name = get_track_name(current_media_content, current_cursor);
 			printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			load_and_play_current_track_from_start();
 			return;
@@ -1380,12 +1388,14 @@ void automated_start_play_next_track()
 		current_cursor.time_pos = 0;
 		current_cursor.stream_pos = 0;
 		cursor_bound_wrap(current_media_content, current_cursor);
+		current_cursor.track_name = get_track_name(current_media_content, current_cursor);
 		break;
 	case TPM_REPEAT:
 		current_cursor.track_i++;
 		current_cursor.time_pos = 0;
 		current_cursor.stream_pos = 0;
 		cursor_bound_wrap_repeat_album(current_media_content, current_cursor);
+		current_cursor.track_name = get_track_name(current_media_content, current_cursor);
 		break;
 	case TPM_REPEAT_TRACK:
 		current_cursor.time_pos = 0;
@@ -1398,6 +1408,7 @@ void automated_start_play_next_track()
 		current_cursor.time_pos = 0;
 		current_cursor.stream_pos = 0;
 		cursor_bound_wrap(current_media_content, current_cursor);
+		current_cursor.track_name = get_track_name(current_media_content, current_cursor);
 		break;
 	case TPM_NUM_MODES:
 		break;
