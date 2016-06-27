@@ -64,6 +64,7 @@ enum TrackFindStrategyStep {
 	TFSS_LOADFILE,
 	TFSS_SCAN_CURRENT_MOUNT,
 	TFSS_CHECK_CHANGED_PARTITIONS,
+	TFSS_RESET_CURSOR_TO_BEGINNING,
 	TFSS_WAIT_2S,
 	TFSS_WAIT_4S,
 
@@ -92,6 +93,10 @@ const TrackFindStrategyStep TRACK_FIND_STRATEGY[] = {
 	TFSS_LOADFILE,
 	TFSS_CHECK_CHANGED_PARTITIONS,
 	TFSS_WAIT_4S,
+	TFSS_SCAN_CURRENT_MOUNT,
+	TFSS_LOADFILE,
+	TFSS_CHECK_CHANGED_PARTITIONS,
+	TFSS_RESET_CURSOR_TO_BEGINNING,
 	TFSS_SCAN_CURRENT_MOUNT,
 	TFSS_LOADFILE,
 	TFSS_CHECK_CHANGED_PARTITIONS,
@@ -512,6 +517,11 @@ void execute_track_find_strategy()
 		printf("TFS: Checking changed partitions\n");
 		void handle_changed_partitions();
 		handle_changed_partitions();
+		break; }
+	case TFSS_RESET_CURSOR_TO_BEGINNING: {
+		printf("TFS: Resetting cursor to beginning\n");
+		current_cursor.time_pos = 0;
+		current_cursor.stream_pos = 0;
 		break; }
 	case TFSS_WAIT_2S: {
 		printf("TFS: Waiting 2s\n");
