@@ -758,56 +758,38 @@ void arduino_set_extra_segments()
 	arduino_serial_write(">EXTRA_SEGMENTS:"+itos(extra_segment_flags)+"\r\n");
 }
 
-void handle_control_next()
+void start_at_relative_track(int album_add, int track_add, bool force_show_album=false)
 {
-	current_cursor.track_i++;
+	current_cursor.album_i += album_add;
+	current_cursor.track_i += track_add;
 	current_cursor.time_pos = 0;
 	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
 	current_cursor.track_name = get_track_name(current_media_content, current_cursor);
+	if(album_add != 0 || force_show_album)
+		temp_display_album();
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	load_and_play_current_track_from_start();
+}
+
+void handle_control_next()
+{
+	start_at_relative_track(0, 1);
 }
 
 void handle_control_prev()
 {
-	current_cursor.track_i--;
-	current_cursor.time_pos = 0;
-	current_cursor.stream_pos = 0;
-	cursor_bound_wrap(current_media_content, current_cursor);
-	current_cursor.track_name = get_track_name(current_media_content, current_cursor);
-	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-	load_and_play_current_track_from_start();
+	start_at_relative_track(0, -1);
 }
 
 void handle_control_nextalbum()
 {
-	current_cursor.album_i++;
-	current_cursor.track_i = 0;
-	current_cursor.time_pos = 0;
-	current_cursor.stream_pos = 0;
-	cursor_bound_wrap(current_media_content, current_cursor);
-	current_cursor.track_name = get_track_name(current_media_content, current_cursor);
-
-	temp_display_album();
-
-	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-	load_and_play_current_track_from_start();
+	start_at_relative_track(1, 0);
 }
 
 void handle_control_prevalbum()
 {
-	current_cursor.album_i--;
-	current_cursor.track_i = 0;
-	current_cursor.time_pos = 0;
-	current_cursor.stream_pos = 0;
-	cursor_bound_wrap(current_media_content, current_cursor);
-	current_cursor.track_name = get_track_name(current_media_content, current_cursor);
-
-	temp_display_album();
-
-	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-	load_and_play_current_track_from_start();
+	start_at_relative_track(-1, 0);
 }
 
 void handle_changed_track_progress_mode()
@@ -872,12 +854,7 @@ void handle_control_track_number(int track_n)
 	}
 
 	current_cursor.track_i = track_i;
-	current_cursor.time_pos = 0;
-	current_cursor.stream_pos = 0;
-	cursor_bound_wrap(current_media_content, current_cursor);
-	current_cursor.track_name = get_track_name(current_media_content, current_cursor);
-	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-	load_and_play_current_track_from_start();
+	start_at_relative_track(0, 0);
 }
 
 void handle_control_album_number(int album_n)
@@ -899,15 +876,7 @@ void handle_control_album_number(int album_n)
 
 	current_cursor.album_i = album_i;
 	current_cursor.track_i = 0;
-	current_cursor.time_pos = 0;
-	current_cursor.stream_pos = 0;
-	cursor_bound_wrap(current_media_content, current_cursor);
-	current_cursor.track_name = get_track_name(current_media_content, current_cursor);
-
-	temp_display_album();
-
-	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-	load_and_play_current_track_from_start();
+	start_at_relative_track(0, 0, true);
 }
 
 void update_display();
@@ -1000,12 +969,7 @@ void handle_control_search(const ss_ &searchstring)
 			if(strcasestr(track.display_name.c_str(), searchstring.c_str())){
 				printf("Found track\n");
 				current_cursor = cursor;
-				current_cursor.time_pos = 0;
-				current_cursor.stream_pos = 0;
-				cursor_bound_wrap(current_media_content, current_cursor);
-				current_cursor.track_name = get_track_name(current_media_content, current_cursor);
-				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-				load_and_play_current_track_from_start();
+				start_at_relative_track(0, 0);
 				return;
 			}
 			cursor.track_i++;
@@ -1017,12 +981,7 @@ void handle_control_search(const ss_ &searchstring)
 		if(strcasestr(album.name.c_str(), searchstring.c_str())){
 			printf("Found album\n");
 			current_cursor = cursor;
-			current_cursor.time_pos = 0;
-			current_cursor.stream_pos = 0;
-			cursor_bound_wrap(current_media_content, current_cursor);
-			current_cursor.track_name = get_track_name(current_media_content, current_cursor);
-			printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-			load_and_play_current_track_from_start();
+			start_at_relative_track(0, 0, true);
 			return;
 		}
 		cursor.album_i++;
@@ -1389,17 +1348,24 @@ void automated_start_play_next_track()
 		current_cursor.stream_pos = 0;
 		cursor_bound_wrap(current_media_content, current_cursor);
 		current_cursor.track_name = get_track_name(current_media_content, current_cursor);
+		printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+		load_and_play_current_track_from_start();
 		break;
 	case TPM_REPEAT:
 		current_cursor.track_i++;
 		current_cursor.time_pos = 0;
 		current_cursor.stream_pos = 0;
+		// NOTE: Album repeat is done here
 		cursor_bound_wrap_repeat_album(current_media_content, current_cursor);
 		current_cursor.track_name = get_track_name(current_media_content, current_cursor);
+		printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+		load_and_play_current_track_from_start();
 		break;
 	case TPM_REPEAT_TRACK:
 		current_cursor.time_pos = 0;
 		current_cursor.stream_pos = 0;
+		printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+		refresh_track();
 		break;
 	case TPM_SHUFFLE:
 		// NOTE: Not implemented; currently behaves like sequential
@@ -1409,13 +1375,12 @@ void automated_start_play_next_track()
 		current_cursor.stream_pos = 0;
 		cursor_bound_wrap(current_media_content, current_cursor);
 		current_cursor.track_name = get_track_name(current_media_content, current_cursor);
+		printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+		load_and_play_current_track_from_start();
 		break;
 	case TPM_NUM_MODES:
 		break;
 	}
-
-	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-	refresh_track();
 }
 
 void do_something_instead_of_idle()
