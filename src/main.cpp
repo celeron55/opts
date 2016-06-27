@@ -46,6 +46,7 @@ ss_ arduino_serial_fd_path;
 bool tried_to_update_arduino_firmware = false;
 time_t arduino_last_incoming_message_timestamp = 0;
 CommandAccumulator<100> arduino_message_accu;
+set_<int> current_keys;
 
 time_t display_update_timestamp = 0;
 size_t display_next_startpos = 0;
@@ -927,11 +928,11 @@ void update_stateful_input()
 void handle_control_input_digit(int input_digit)
 {
 	if(stateful_input_mode != SIM_NONE){
-		return handle_control_stateful_input_mode_input('0'+input_digit);
+		handle_control_stateful_input_mode_input('0'+input_digit);
 	}
 
-	arduino_set_temp_text(
-			itos(current_cursor.album_i+1)+"-"+itos(current_cursor.track_i+1));
+	// Album and track number will be displayed
+	update_display();
 }
 
 void handle_control_search(const ss_ &searchstring)
@@ -1034,6 +1035,18 @@ void handle_stdin()
 			} else if(command.size() >= 2 && command.substr(0, 1) == "/"){
 				ss_ searchstring = command.substr(1);
 				handle_control_search(searchstring);
+			} else if(command.size() >= 9 && command.substr(0, 9) == "keypress "){
+				int key = stoi(command.substr(9), -1);
+				if(key != -1){
+					void handle_key_press(int key);
+					handle_key_press(key);
+				}
+			} else if(command.size() >= 11 && command.substr(0, 11) == "keyrelease "){
+				int key = stoi(command.substr(11), -1);
+				if(key != -1){
+					void handle_key_release(int key);
+					handle_key_release(key);
+				}
 			} else {
 				printf("Invalid command: \"%s\"\n", cs(command));
 			}
@@ -1043,6 +1056,8 @@ void handle_stdin()
 
 void handle_key_press(int key)
 {
+	current_keys.insert(key);
+
 	if(key == 24){
 		if(stateful_input_mode != SIM_NONE)
 			handle_control_stateful_input_cancel();
@@ -1118,6 +1133,7 @@ void handle_key_press(int key)
 
 void handle_key_release(int key)
 {
+	current_keys.erase(key);
 }
 
 void try_open_arduino_serial()
@@ -1249,6 +1265,15 @@ void update_display()
 	if(stateful_input_mode != SIM_NONE){
 		display_stateful_input();
 		return;
+	}
+
+	if(current_keys.count(21) || current_keys.count(16) ||
+			current_keys.count(10) || current_keys.count(15) ||
+			current_keys.count(20) || current_keys.count(25)){
+		// Numeric key without any special mode.
+		// Temporarily display album and track number until key isn't pressed.
+		ss_ s = itos(current_cursor.album_i+1)+"-"+itos(current_cursor.track_i+1);
+		arduino_set_temp_text(s);
 	}
 
 	if(current_media_content.albums.empty()){
