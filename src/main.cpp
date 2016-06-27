@@ -139,6 +139,8 @@ struct PlayCursor
 PlayCursor current_cursor;
 PlayCursor last_succesfully_playing_cursor;
 
+Track get_track(const MediaContent &mc, const PlayCursor &cursor);
+
 // Yes, there are no modes for album progression. Albums progress sequentially,
 // tracks inside albums can progress differencly.
 enum TrackProgressMode {
@@ -153,14 +155,15 @@ enum TrackProgressMode {
 TrackProgressMode track_progress_mode = TPM_SEQUENTIAL;
 
 bool track_was_loaded = false;
-int num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track = 0;
 int64_t current_track_stream_end = 0;
 
 time_t mpv_last_not_idle_timestamp = 0;
+time_t mpv_last_loadfile_timestamp = 0;
 
 void on_loadfile(double start_pos, const ss_ &track_name)
 {
-	num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track = start_pos;
+	mpv_last_loadfile_timestamp = time(0);
+
 	current_track_stream_end = 0; // Will be filled in at time-pos getter code or something
 
 	if(current_cursor.track_name != track_name){
@@ -200,33 +203,55 @@ StatefulInputMode stateful_input_mode = SIM_NONE;
 time_t stateful_input_mode_active_timestamp = 0;
 CommandAccumulator<10> stateful_input_accu;
 
+ss_ mpv_get_string_property(mpv_handle *mpv, const char *name)
+{
+	char *cs = NULL;
+	mpv_get_property(mpv, name, MPV_FORMAT_STRING, &cs);
+	ss_ s = cs != NULL ? ss_(cs) : ss_();
+	mpv_free(cs);
+	return s;
+}
+
 bool is_track_playing_fine()
 {
+	if(mpv_last_loadfile_timestamp > time(0) - 3){
+		// We can't determine anything during the first few seconds. Probably
+		// fine.
+		return true;
+	}
+
 	if(!track_was_loaded){
+		// Not loaded is not fine.
 		return false;
 	}
 
-	int64_t stream_end = 0;
-	mpv_get_property(mpv, "stream-end", MPV_FORMAT_INT64, &stream_end);
-	// Don't care for <50kB files
-	if(stream_end < 50000){
-		return true;
-	}
+	// Let's say the track is playing fine if mpv returns a currently playing
+	// file and that file exists on the filesystem, unless this is track repeat,
+	// in which case don't care about the filesystem as the filesystem isn't
+	// really needed in that case.
 
-	int64_t stream_pos = 0;
-	mpv_get_property(mpv, "stream-pos", MPV_FORMAT_INT64, &stream_pos);
+	Track track = get_track(current_media_content, current_cursor);
 
-	// Don't care if the track is about to end
-	if(stream_pos > stream_end - 50000){
-		return true;
-	}
+	ss_ path_property = mpv_get_string_property(mpv, "path");
 
-	if(num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track < 3){
-		return true;
-	}
-	if(current_cursor.time_pos < num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track / 1.2 - 3){
+	if(path_property == ""){
+		printf("Track is not playing fine because the path property is empty\n");
 		return false;
 	}
+
+	if(track_progress_mode != TPM_REPEAT_TRACK){
+		if(access(track.path.c_str(), F_OK) == -1){
+			printf("Track is not playing fine because the file %s does not "
+					"exist (track.path).\n", cs(track.path));
+			return false;
+		}
+		if(access(path_property.c_str(), F_OK) == -1){
+			printf("Track is not playing fine because the file %s does not "
+					"exist (path_property).\n", cs(path_property));
+			return false;
+		}
+	}
+
 	return true;
 }
 
@@ -1375,6 +1400,7 @@ void automated_start_play_next_track()
 
 void do_something_instead_of_idle()
 {
+	printf("Trying to do something instead of idle\n");
 	if(is_track_at_natural_end()){
 		automated_start_play_next_track();
 	} else {
@@ -1414,25 +1440,18 @@ void handle_mpv()
 				arduino_set_extra_segments();
 			}
 		}
-		if(event->event_id == MPV_EVENT_END_FILE){
-			if(track_progress_mode == TPM_REPEAT_TRACK){
-				num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track = 0;
-			}
-		}
 	}
 
 	static time_t last_time_pos_get_timestamp = 0;
 	if(last_time_pos_get_timestamp != time(0)){
 		last_time_pos_get_timestamp = time(0);
 
-		if(current_pause_mode == PM_PLAY)
-			num_time_pos_checked_seconds_during_unpaused_playtime_of_current_track++;
-
-		double time_pos = 0;
-		mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &time_pos);
 		int64_t stream_pos = 0;
 		mpv_get_property(mpv, "stream-pos", MPV_FORMAT_INT64, &stream_pos);
-		if(time_pos >= 2 && stream_pos > 0){
+		if(stream_pos > 0){
+			double time_pos = 0;
+			mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &time_pos);
+
 			current_cursor.time_pos = time_pos;
 			current_cursor.stream_pos = stream_pos;
 			last_succesfully_playing_cursor = current_cursor;
@@ -1836,8 +1855,14 @@ void handle_periodic_save()
 
 void handle_track_find_strategy()
 {
-	if(!is_track_playing_fine())
+	static time_t timestamp = 0;
+	if(timestamp == time(0))
+		return;
+	timestamp = time(0);
+	if(!is_track_playing_fine()){
+		printf("Track isn't playing fine; executing track find strategy\n");
 		execute_track_find_strategy();
+	}
 }
 
 void sigint_handler(int _)
