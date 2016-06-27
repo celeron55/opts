@@ -199,54 +199,24 @@ void render_raspberry_extras(uint8_t *data)
 		if(g_raspberry_display_progress >= i * 255 / sizeof progress_segments +
 				255 / sizeof progress_segments / 2){
 			uint8_t a = progress_segments[i];
-			data[a / 8] |= 1 << (a % 8); // AUX icon
+			data[a / 8] |= 1 << (a % 8);
 		}
 	}
 	static const uint8_t DISPLAY_FLAG_SEGMENTS[] = {
 		111, 115, 127, 130, 131,
 	};
 	for(uint8_t i=0; i<sizeof DISPLAY_FLAG_SEGMENTS; i++){
+		uint8_t a = DISPLAY_FLAG_SEGMENTS[i];
 		if(g_raspberry_display_extra_segments & (1<<i)){
-			uint8_t a = DISPLAY_FLAG_SEGMENTS[i];
-			data[a / 8] |= 1 << (a % 8); // AUX icon
+			data[a / 8] |= 1 << (a % 8);
+		} else {
+			data[a / 8] &= ~(1 << (a % 8));
 		}
 	}
 }
 
 void raspberry_update()
 {
-	while(command_accumulator.read(Serial)){
-		const char *command = command_accumulator.command();
-		if(strcmp(command, ">VERSION") == 0){
-			Serial.print(F("<VERSION:"));
-			Serial.println(VERSION_STRING);
-			continue;
-		}
-		if(strncmp(command, ">SET_TEXT:", 10) == 0){
-			const char *text = &command[10];
-			snprintf(g_raspberry_display_text, sizeof g_raspberry_display_text, text);
-			continue;
-		}
-		if(strncmp(command, ">SET_TEMP_TEXT:", 15) == 0){
-			const char *text = &command[15];
-			memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
-			char buf[10] = {0};
-			snprintf(buf, 10, "%s", text);
-			set_all_segments(g_temp_display_data, buf);
-			render_raspberry_extras(g_temp_display_data);
-			g_temp_display_data_timer = 1000;
-			continue;
-		}
-		if(strncmp(command, ">PROGRESS:", 10) == 0){
-			g_raspberry_display_progress = atoi(&command[10]);
-			continue;
-		}
-		if(strncmp(command, ">EXTRA_SEGMENTS:", 16) == 0){
-			g_raspberry_display_extra_segments = atoi(&command[16]);
-			continue;
-		}
-	}
-
 	// Update LCD
 	{
 		memset(g_display_data + 1, 0, sizeof g_display_data - 1);
@@ -709,6 +679,48 @@ void handle_encoder()
 	g_encoder_last_state = (e1 ? 1 : 0) | (e2 ? 2 : 0);
 }
 
+void handle_serial()
+{
+	while(command_accumulator.read(Serial)){
+		const char *command = command_accumulator.command();
+		if(strcmp(command, ">VERSION") == 0){
+			Serial.print(F("<VERSION:"));
+			Serial.println(VERSION_STRING);
+			continue;
+		}
+		if(strncmp(command, ">SET_TEXT:", 10) == 0){
+			const char *text = &command[10];
+			snprintf(g_raspberry_display_text, sizeof g_raspberry_display_text, text);
+			continue;
+		}
+		if(strncmp(command, ">SET_TEMP_TEXT:", 15) == 0){
+			if(g_control_mode == CM_RASPBERRY){
+				const char *text = &command[15];
+				memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+				char buf[10] = {0};
+				snprintf(buf, 10, "%s", text);
+				set_all_segments(g_temp_display_data, buf);
+				render_raspberry_extras(g_temp_display_data);
+				g_temp_display_data_timer = 1000;
+			}
+			continue;
+		}
+		if(strncmp(command, ">PROGRESS:", 10) == 0){
+			g_raspberry_display_progress = atoi(&command[10]);
+			continue;
+		}
+		if(strncmp(command, ">EXTRA_SEGMENTS:", 16) == 0){
+			g_raspberry_display_extra_segments = atoi(&command[16]);
+			if(g_control_mode == CM_RASPBERRY){
+				if(g_temp_display_data_timer > 0){
+					render_raspberry_extras(g_temp_display_data);
+				}
+			}
+			continue;
+		}
+	}
+}
+
 void mode_update()
 {
 	if(CONTROL_MODES[g_control_mode].update)
@@ -959,6 +971,8 @@ void loop()
 		handle_keys();
 		g_last_keys_timestamp = millis();
 	}
+
+	handle_serial();
 
 	mode_update();
 
