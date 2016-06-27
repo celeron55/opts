@@ -291,7 +291,8 @@ void save_stuff()
 {
 	last_save_timestamp = time(0);
 
-	printf("Saving stuff to %s...\n", cs(saved_state_path));
+	if(enabled_log_sources.count("debug"))
+		printf("Saving stuff to %s...\n", cs(saved_state_path));
 
 	ss_ save_blob;
 	save_blob += itos(last_succesfully_playing_cursor.album_i) + ";";
@@ -306,7 +307,8 @@ void save_stuff()
 	f<<save_blob;
 	f.close();
 
-	printf("Saved.\n");
+	if(enabled_log_sources.count("debug"))
+		printf("Saved.\n");
 }
 
 void load_stuff()
@@ -585,7 +587,8 @@ ss_ read_any(int fd, bool *dst_error=NULL)
 
 void force_start_at_cursor()
 {
-	printf("Force-start at cursor\n");
+	if(enabled_log_sources.count("debug"))
+		printf("Force-start at cursor\n");
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 
 	Track track = get_track(current_media_content, current_cursor);
@@ -598,10 +601,12 @@ void force_start_at_cursor()
 	}
 
 	if(current_cursor.time_pos >= 0.001){
-		printf("Force-starting at %fs\n", current_cursor.time_pos);
+		if(enabled_log_sources.count("debug"))
+			printf("Force-starting at %fs\n", current_cursor.time_pos);
 		mpv_set_option_string(mpv, "start", cs(ftos(current_cursor.time_pos)));
 	} else {
-		printf("Force-starting at 0s\n");
+		if(enabled_log_sources.count("debug"))
+			printf("Force-starting at 0s\n");
 		mpv_set_option_string(mpv, "start", "#1");
 	}
 
@@ -650,6 +655,11 @@ void handle_control_playpause()
 	if(!idle){
 		int was_pause = 0;
 		mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &was_pause);
+
+		if(was_pause)
+			printf("Resume\n");
+		else
+			printf("Pause\n");
 
 		// Some kind of track is loaded; toggle playback
 		check_mpv_error(mpv_command_string(mpv, "pause"));
@@ -1021,6 +1031,7 @@ void handle_stdin()
 				printf("  album <n>\n");
 				printf("  track <n>\n");
 				printf("  randomalbum, ra, r\n");
+				printf("  albumlist, al\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
@@ -1056,6 +1067,9 @@ void handle_stdin()
 				handle_control_track_number(track_n);
 			} else if(command == "randomalbum" || command == "ra" || command == "r"){
 				handle_control_random_album();
+			} else if(command == "albumlist" || command == "al"){
+				for(size_t i=0; i<current_media_content.albums.size(); i++)
+					printf("#%zu: %s\n", i+1, cs(current_media_content.albums[i].name));
 			} else if(command.size() >= 9 && command.substr(0, 9) == "keypress "){
 				int key = stoi(command.substr(9), -1);
 				if(key != -1){
@@ -1434,8 +1448,10 @@ void handle_mpv()
 				int64_t stream_end = 0;
 				mpv_get_property(mpv, "stream-end", MPV_FORMAT_INT64, &stream_end);
 				current_track_stream_end = stream_end;
-				printf("Got current track stream_end: %" PRId64 "\n",
-						current_track_stream_end);
+				if(enabled_log_sources.count("debug")){
+					printf("Got current track stream_end: %" PRId64 "\n",
+							current_track_stream_end);
+				}
 			}
 			if(queued_pause){
 				queued_pause = false;
@@ -1895,7 +1911,7 @@ int main(int argc, char *argv[])
 			"  -D [mode]            Set arduino serial debug mode (off/raw/fancy)\n"
 			"  -U                   Minimize display updates\n"
 			"  -W [integer]         Set text display width\n"
-			"  -l [string]          Enable log source (eg. mpv)\n"
+			"  -l [string]          Enable log source (mpv/debug)\n"
 			;
 
 	int c;
