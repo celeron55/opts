@@ -27,7 +27,6 @@
 ss_ saved_state_path = "saved_state";
 
 sv_<ss_> arduino_serial_paths;
-ss_ test_file_path;
 sv_<ss_> track_devices;
 sv_<ss_> static_mount_paths;
 ss_ arduino_serial_debug_mode = "off"; // off / raw / fancy
@@ -1887,12 +1886,11 @@ int main(int argc, char *argv[])
 	signal(SIGINT, sigint_handler);
 	startup_timestamp = time(0);
 
-	const char opts[100] = "hs:t:d:S:m:D:UW:l:";
+	const char opts[100] = "hs:d:S:m:D:UW:l:";
 	const char usagefmt[1000] =
 			"Usage: %s [OPTION]...\n"
 			"  -h                   Show this help\n"
 			"  -s [path]            Serial port device of Arduino (pass multiple -s to specify many)\n"
-			"  -t [path]            Test file path\n"
 			"  -d [dev1,dev2,...]   Block devices to track and mount (eg. sdc)\n"
 			"  -S [path]            Saved state path\n"
 			"  -m [path]            Static mount path; automounting is disabled if set and root privileges are not needed; multiple allowed\n"
@@ -1912,9 +1910,6 @@ int main(int argc, char *argv[])
 			return 1;
 		case 's':
 			arduino_serial_paths.push_back(c55_optarg);
-			break;
-		case 't':
-			test_file_path = c55_optarg;
 			break;
 		case 'd':
 			{
