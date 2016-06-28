@@ -772,8 +772,12 @@ void arduino_set_extra_segments()
 
 void start_at_relative_track(int album_add, int track_add, bool force_show_album=false)
 {
-	current_cursor.album_i += album_add;
-	current_cursor.track_i += track_add;
+	if(album_add != 0){
+		current_cursor.album_i += album_add;
+		current_cursor.track_i = 0;
+	} else {
+		current_cursor.track_i += track_add;
+	}
 	current_cursor.time_pos = 0;
 	current_cursor.stream_pos = 0;
 	cursor_bound_wrap(current_media_content, current_cursor);
