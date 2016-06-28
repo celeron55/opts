@@ -1036,6 +1036,7 @@ void handle_stdin()
 				printf("  track <n>\n");
 				printf("  randomalbum, ra, r\n");
 				printf("  albumlist, al\n");
+				printf("  tracklist, tl\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
@@ -1074,6 +1075,14 @@ void handle_stdin()
 			} else if(command == "albumlist" || command == "al"){
 				for(size_t i=0; i<current_media_content.albums.size(); i++)
 					printf("#%zu: %s\n", i+1, cs(current_media_content.albums[i].name));
+			} else if(command == "tracklist" || command == "tl"){
+				auto &cursor = current_cursor;
+				auto &mc = current_media_content;
+				if(cursor.album_i >= 0 && cursor.album_i < (int)mc.albums.size()){
+					auto &album = mc.albums[cursor.album_i];
+					for(size_t i=0; i<album.tracks.size(); i++)
+						printf("#%zu: %s\n", i+1, cs(album.tracks[i].display_name));
+				}
 			} else if(command.size() >= 9 && command.substr(0, 9) == "keypress "){
 				int key = stoi(command.substr(9), -1);
 				if(key != -1){
