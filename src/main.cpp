@@ -1132,8 +1132,8 @@ void handle_stdin()
 				printf("  rg <min. #tracks> (greater)\n");
 				printf("  rl <max. #tracks> (lower)\n");
 				printf("  randomtrack, rt\n");
-				printf("  albumlist, al\n");
-				printf("  tracklist, tl\n");
+				printf("  albumlist, al, la\n");
+				printf("  tracklist, tl, lt\n");
 				printf("  intro\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
@@ -1186,10 +1186,10 @@ void handle_stdin()
 					handle_control_random_album_max_num_tracks(max_num_tracks);
 			} else if(w1 == "randomtrack" || w1 == "rt"){
 				handle_control_random_track();
-			} else if(command == "albumlist" || command == "al"){
+			} else if(command == "albumlist" || command == "al" || command == "la"){
 				for(size_t i=0; i<current_media_content.albums.size(); i++)
 					printf("#%zu: %s\n", i+1, cs(current_media_content.albums[i].name));
-			} else if(command == "tracklist" || command == "tl"){
+			} else if(command == "tracklist" || command == "tl" || command == "lt"){
 				auto &cursor = current_cursor;
 				auto &mc = current_media_content;
 				if(cursor.album_i >= 0 && cursor.album_i < (int)mc.albums.size()){
