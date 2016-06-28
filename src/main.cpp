@@ -2068,8 +2068,6 @@ void do_intro()
 
 int main(int argc, char *argv[])
 {
-	do_intro();
-
 	signal(SIGINT, sigint_handler);
 	startup_timestamp = time(0);
 	srand(time(0));
@@ -2148,6 +2146,8 @@ int main(int argc, char *argv[])
 				cs(arduino_serial_debug_mode));
 		return 1;
 	}
+
+	do_intro();
 
 	load_stuff();
 
