@@ -1,2 +1,4 @@
 #!/bin/sh
-g++ -o player src/main.cpp src/c55_getopt.cpp src/file_watch.cpp src/filesys.cpp src/arduino_firmware.cpp `pkg-config --libs --cflags mpv` --std=c++0x -Wall -Wno-unused-function -g
+g++ -o opts src/main.cpp src/c55_getopt.cpp src/file_watch.cpp src/filesys.cpp src/arduino_firmware.cpp `pkg-config --libs --cflags mpv` --std=c++0x -Wall -Wno-unused-function -g &&
+rm -f player &&
+ln -s opts player

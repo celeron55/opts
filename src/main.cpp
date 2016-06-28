@@ -341,7 +341,8 @@ void load_stuff()
 	current_cursor = last_succesfully_playing_cursor;
 
 	if(queued_pause){
-		printf("Queuing pause\n");
+		if(enabled_log_sources.count("debug"))
+			printf("Queuing pause\n");
 	}
 }
 
@@ -1498,11 +1499,13 @@ void handle_mpv()
 			}
 			if(queued_pause){
 				queued_pause = false;
-				printf("Executing queued pause\n");
+				if(enabled_log_sources.count("debug"))
+					printf("Executing queued pause\n");
 				check_mpv_error(mpv_command_string(mpv, "pause"));
 				arduino_set_temp_text("PAUSE");
 				current_pause_mode = PM_PAUSE;
 				arduino_set_extra_segments();
+				printf("Paused.\n");
 			}
 		}
 	}
@@ -1939,6 +1942,8 @@ void sigint_handler(int _)
 
 int main(int argc, char *argv[])
 {
+	printf("⌁ OVER POWERED TRACK SWITCH ⌁\n");
+
 	signal(SIGINT, sigint_handler);
 	startup_timestamp = time(0);
 	srand(time(0));
@@ -2036,7 +2041,8 @@ int main(int argc, char *argv[])
 
 	handle_changed_track_progress_mode();
 
-	printf("Doing initial partition scan\n");
+	if(enabled_log_sources.count("debug"))
+		printf("Doing initial partition scan\n");
 	handle_changed_partitions();
 
 	while(do_main_loop){
