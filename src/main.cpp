@@ -1029,8 +1029,8 @@ void handle_control_random_album_approx_num_tracks(size_t approx_num_tracks)
 	sv_<int> suitable_albums;
 	for(size_t i=0; i<mc.albums.size(); i++){
 		auto &album = mc.albums[i];
-		if(album.tracks.size() >= approx_num_tracks * 0.75 &&
-				album.tracks.size() <= approx_num_tracks * 1.5){
+		if(album.tracks.size() >= approx_num_tracks * 0.60 &&
+				album.tracks.size() <= approx_num_tracks * 1.6){
 			suitable_albums.push_back(i);
 		}
 	}
