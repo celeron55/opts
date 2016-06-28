@@ -2162,7 +2162,8 @@ int main(int argc, char *argv[])
 
 	try_open_arduino_serial();
 
-	partitions_watch.reset(createFileWatch());
+	partitions_watch.reset(createFileWatch(
+			IN_MOVED_TO | IN_CREATE | IN_MOVED_FROM | IN_DELETE | IN_ATTRIB));
 
     mpv = mpv_create();
     if (!mpv) {

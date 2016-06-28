@@ -2,6 +2,7 @@
 #pragma once
 #include "types.hpp"
 #include <functional>
+#include <sys/inotify.h>
 
 struct FileWatch
 {
@@ -19,6 +20,10 @@ struct FileWatch
 };
 
 // cb is called at either report_fd() or update().
-FileWatch* createFileWatch();
+FileWatch* createFileWatch(uint32_t mask);
+
+// Mask examples:
+//   IN_MOVED_TO | IN_CREATE | IN_MOVED_FROM | IN_DELETE | IN_ATTRIB
+//   IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_MOVED_FROM | IN_DELETE | IN_MODIFY | IN_ATTRIB
 
 // vim: set noet ts=4 sw=4:

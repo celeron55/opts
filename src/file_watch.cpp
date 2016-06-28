@@ -16,9 +16,6 @@
 #define INOTIFY_BUFSIZE (sizeof(struct inotify_event) + NAME_MAX + 1)
 #define INOTIFY_STRUCTSIZE (sizeof(struct inotify_event))
 
-//#define MASK (IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_MOVED_FROM | IN_DELETE | IN_MODIFY | IN_ATTRIB)
-#define MASK (IN_MOVED_TO | IN_CREATE | IN_MOVED_FROM | IN_DELETE | IN_ATTRIB)
-
 struct CFileWatch: FileWatch
 {
 	struct WatchThing {
@@ -29,10 +26,12 @@ struct CFileWatch: FileWatch
 			path(path), cbs(cbs){}
 	};
 
+	uint32_t mask;
 	int m_fd = -1;
 	sm_<int, sp_<WatchThing>> m_watch;
 
-	CFileWatch()
+	CFileWatch(uint32_t mask):
+		mask(mask)
 	{
 		m_fd = inotify_init1(IN_NONBLOCK);
 		log_d(MODULE, "CFileWatch(): m_fd=%i", m_fd);
@@ -57,7 +56,7 @@ struct CFileWatch: FileWatch
 				return;
 			}
 		}
-		int r = inotify_add_watch(m_fd, path.c_str(), MASK);
+		int r = inotify_add_watch(m_fd, path.c_str(), mask);
 		if(r == -1){
 			throw Exception(ss_()+"inotify_add_watch() failed: "+
 					strerror(errno)+" (path="+path+")");
@@ -132,7 +131,7 @@ struct CFileWatch: FileWatch
 				// Inotify removed path from watch
 				const ss_ &path = thing->path;
 				m_watch.erase(in_event->wd);
-				int r = inotify_add_watch(m_fd, path.c_str(), MASK);
+				int r = inotify_add_watch(m_fd, path.c_str(), mask);
 				if(r == -1){
 					log_w(MODULE, "inotify_add_watch() failed: %s (while trying "
 							"to re-watch ignored path \"%s\")",
@@ -152,7 +151,7 @@ struct CFileWatch: FileWatch
 	}
 };
 
-FileWatch* createFileWatch()
+FileWatch* createFileWatch(uint32_t mask)
 {
-	return new CFileWatch();
+	return new CFileWatch(mask);
 }
