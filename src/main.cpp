@@ -218,13 +218,21 @@ ss_ mpv_get_string_property(mpv_handle *mpv, const char *name)
 
 bool is_track_playing_fine()
 {
+	static time_t last_playing_fine_timestamp = 0;
+
+	bool was_playing_fine_during_the_past_three_seconds = (
+			last_playing_fine_timestamp > time(0) - 3);
+
 	if(mpv_last_loadfile_timestamp > time(0) - 3){
 		// We can't determine anything during the first few seconds. Probably
 		// fine.
+		last_playing_fine_timestamp = time(0);
 		return true;
 	}
 
 	if(!track_was_loaded){
+		if(was_playing_fine_during_the_past_three_seconds)
+			return true;
 		// Not loaded is not fine.
 		return false;
 	}
@@ -239,6 +247,8 @@ bool is_track_playing_fine()
 	ss_ path_property = mpv_get_string_property(mpv, "path");
 
 	if(path_property == ""){
+		if(was_playing_fine_during_the_past_three_seconds)
+			return true;
 		printf("Track is not playing fine because the path property is empty\n");
 		return false;
 	}
@@ -256,6 +266,7 @@ bool is_track_playing_fine()
 		}
 	}
 
+	last_playing_fine_timestamp = time(0);
 	return true;
 }
 
