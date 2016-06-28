@@ -1,0 +1,38 @@
+OVER POWERED TRACK SWITCH
+=========================
+- Manual; The flaming edition
+
+Building
+--------
+Install g++ and libmpv. Then:
+$ ./build.sh
+
+Running
+-------
+./opts -h
+./opts -m ~/music
+
+Controlling
+-----------
+When opts is running, type "?" or "h" and press enter.
+
+It then tells you what other commands exist and then you can start using those
+commands by typing them in the same way. Spaces are often optional.
+
+Configuring
+-----------
+echo "-m ~/music" > ~/.config/opts/opts
+echo "-m /mnt/foobar/stuff" >> ~/.config/opts/opts
+
+Installing
+----------
+sudo cp opts /usr/local/bin/opts
+
+Files
+-----
+~/.config/opts/opts:
+  Options; parsed like program arguments; can override using -C
+
+~/.config/opts/state:
+  Default saved state location; can override using -S
+
