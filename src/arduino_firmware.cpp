@@ -1,18 +1,9 @@
 #include "arduino_firmware.hpp"
 #include "string_util.hpp"
 #include "arduino_controls.hpp"
+#include "stuff2.hpp"
 #include <fstream>
 #include <stdio.h>
-
-bool read_file_content(const ss_ &path, ss_ &result_data)
-{
-	std::ifstream f(path.c_str());
-	if(!f.good())
-		return false;
-	result_data = ss_((std::istreambuf_iterator<char>(f)),
-			std::istreambuf_iterator<char>());
-	return true;
-}
 
 void arduino_firmware_update_if_needed(const ss_ &current_version)
 {

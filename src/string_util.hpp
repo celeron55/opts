@@ -113,3 +113,11 @@ inline bool string_allowed(const std::string &s,
 	}
 	return true;
 }
+
+static void replace_string(ss_ &str, const ss_ &old_s, const ss_ &new_s){
+	size_t i = 0u;
+	while((i = str.find(old_s, i)) != std::string::npos){
+		str.replace(i, old_s.length(), new_s);
+		i += new_s.length();
+	}
+}

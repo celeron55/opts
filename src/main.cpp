@@ -8,6 +8,8 @@
 #include "filesys.hpp"
 #include "scope_end_trigger.hpp"
 #include "arduino_firmware.hpp"
+#include "stuff2.hpp"
+#include "mkdir_p.hpp"
 #include "../common/common.hpp"
 #include <mpv/client.h>
 #include <fstream>
@@ -25,15 +27,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-ss_ saved_state_path = "saved_state";
+ss_ config_path = "__default__";
+bool config_must_be_readable = false;
+
+ss_ saved_state_path = "__default__";
 
 sv_<ss_> arduino_serial_paths;
 sv_<ss_> track_devices;
-sv_<ss_> static_mount_paths;
+sv_<ss_> static_media_paths;
+bool there_are_command_line_static_media_paths = false;
 ss_ arduino_serial_debug_mode = "off"; // off / raw / fancy
 int arduino_display_width = 8;
 bool minimize_display_updates = false;
+
 set_<ss_> enabled_log_sources;
+#define LOG_MPV enabled_log_sources.count("mpv")
+#define LOG_DEBUG enabled_log_sources.count("debug")
 
 time_t startup_timestamp = 0;
 
@@ -281,13 +290,13 @@ bool is_track_at_natural_end()
 	}
 
 	if(!track_was_loaded){
-		if(enabled_log_sources.count("debug"))
+		if(LOG_DEBUG)
 			printf("is_track_at_natural_end(): !track_was_loaded -> false\n");
 		return false;
 	}
 
 	if(current_track_stream_end == 0){
-		if(enabled_log_sources.count("debug"))
+		if(LOG_DEBUG)
 			printf("is_track_at_natural_end(): current_track_stream_end == 0 -> false\n");
 		return false;
 	}
@@ -296,7 +305,7 @@ bool is_track_at_natural_end()
 
 	bool is = (stream_pos >= current_track_stream_end * 0.9 - 5);
 
-	if(enabled_log_sources.count("debug")){
+	if(LOG_DEBUG){
 		printf("is_track_at_natural_end(): stream_pos=%" PRId64
 				", current_track_stream_end=%" PRId64 " -> %s\n",
 				stream_pos, current_track_stream_end, is?"true":"false");
@@ -310,7 +319,7 @@ void save_stuff()
 {
 	last_save_timestamp = time(0);
 
-	if(enabled_log_sources.count("debug"))
+	if(LOG_DEBUG)
 		printf("Saving stuff to %s...\n", cs(saved_state_path));
 
 	ss_ save_blob;
@@ -326,7 +335,7 @@ void save_stuff()
 	f<<save_blob;
 	f.close();
 
-	if(enabled_log_sources.count("debug"))
+	if(LOG_DEBUG)
 		printf("Saved.\n");
 }
 
@@ -356,7 +365,7 @@ void load_stuff()
 	current_cursor = last_succesfully_playing_cursor;
 
 	if(queued_pause){
-		if(enabled_log_sources.count("debug"))
+		if(LOG_DEBUG)
 			printf("Queuing pause\n");
 	}
 }
@@ -607,7 +616,7 @@ ss_ read_any(int fd, bool *dst_error=NULL)
 
 void force_start_at_cursor()
 {
-	if(enabled_log_sources.count("debug"))
+	if(LOG_DEBUG)
 		printf("Force-start at cursor\n");
 	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 
@@ -621,11 +630,11 @@ void force_start_at_cursor()
 	}
 
 	if(current_cursor.time_pos >= 0.001){
-		if(enabled_log_sources.count("debug"))
+		if(LOG_DEBUG)
 			printf("Force-starting at %fs\n", current_cursor.time_pos);
 		mpv_set_option_string(mpv, "start", cs(ftos(current_cursor.time_pos)));
 	} else {
-		if(enabled_log_sources.count("debug"))
+		if(LOG_DEBUG)
 			printf("Force-starting at 0s\n");
 		mpv_set_option_string(mpv, "start", "#1");
 	}
@@ -1499,7 +1508,7 @@ void eat_all_mpv_events()
 		mpv_event *event = mpv_wait_event(mpv, 0);
 		if(event->event_id == MPV_EVENT_NONE)
 			break;
-		if(enabled_log_sources.count("mpv"))
+		if(LOG_MPV)
 			printf("MPV: %s (eaten)\n", mpv_event_name(event->event_id));
 	}
 }
@@ -1511,7 +1520,7 @@ void wait_mpv_event(int event_id, int max_ms)
 			mpv_event *event = mpv_wait_event(mpv, 0);
 			if(event->event_id == MPV_EVENT_NONE)
 				break;
-			if(enabled_log_sources.count("mpv"))
+			if(LOG_MPV)
 				printf("MPV: %s (waited over)\n", mpv_event_name(event->event_id));
 			if(event->event_id == event_id)
 				return;
@@ -1570,7 +1579,12 @@ void automated_start_play_next_track()
 
 void do_something_instead_of_idle()
 {
-	if(enabled_log_sources.count("debug"))
+	if(!static_media_paths.empty() && current_media_content.albums.empty()){
+		// There are static media paths and there are no tracks; do nothing
+		return;
+	}
+
+	if(LOG_DEBUG)
 		printf("Trying to do something instead of idle\n");
 
 	if(is_track_at_natural_end()){
@@ -1586,7 +1600,7 @@ void handle_mpv()
 		mpv_event *event = mpv_wait_event(mpv, 0);
 		if(event->event_id == MPV_EVENT_NONE)
 			break;
-		if(enabled_log_sources.count("mpv"))
+		if(LOG_MPV)
 			printf("MPV: %s\n", mpv_event_name(event->event_id));
 		if(event->event_id == MPV_EVENT_SHUTDOWN){
 			do_main_loop = false;
@@ -1600,14 +1614,14 @@ void handle_mpv()
 				int64_t stream_end = 0;
 				mpv_get_property(mpv, "stream-end", MPV_FORMAT_INT64, &stream_end);
 				current_track_stream_end = stream_end;
-				if(enabled_log_sources.count("debug")){
+				if(LOG_DEBUG){
 					printf("Got current track stream_end: %" PRId64 "\n",
 							current_track_stream_end);
 				}
 			}
 			if(queued_pause){
 				queued_pause = false;
-				if(enabled_log_sources.count("debug"))
+				if(LOG_DEBUG)
 					printf("Executing queued pause\n");
 				check_mpv_error(mpv_command_string(mpv, "pause"));
 				arduino_set_temp_text("PAUSE");
@@ -1660,7 +1674,8 @@ void handle_mpv()
 		} else if(mpv_last_not_idle_timestamp > time(0) - 5){
 			// Fine enough until 5 seconds of idle
 		} else {
-			printf("MPV Idled for too long; doing something\n");
+			if(LOG_DEBUG)
+				printf("MPV Idled for too long; doing something\n");
 			mpv_last_not_idle_timestamp = time(0);
 			do_something_instead_of_idle();
 		}
@@ -1753,9 +1768,9 @@ void scan_current_mount()
 	//disappeared_tracks.clear();
 	current_media_content.albums.clear();
 
-	if(!static_mount_paths.empty()){
+	if(!static_media_paths.empty()){
 		int n = 1;
-		for(const ss_ &path : static_mount_paths){
+		for(const ss_ &path : static_media_paths){
 			scan_directory("root_"+itos(n++), path, current_media_content.albums);
 		}
 	} else {
@@ -1768,9 +1783,15 @@ void scan_current_mount()
 
 	if(current_cursor.album_i == 0 && current_cursor.track_i == 0 &&
 			current_cursor.track_name == ""){
-		if(enabled_log_sources.count("debug"))
+		if(LOG_DEBUG)
 			printf("Starting without saved state; picking random album\n");
 		handle_control_random_album();
+	}
+
+	if(!static_media_paths.empty() && current_media_content.albums.empty()){
+		// There are static media paths and there are no tracks; do nothing
+		printf("No media.\n");
+		return;
 	}
 
 	if(!force_resolve_track(current_media_content, current_cursor)){
@@ -1854,11 +1875,14 @@ ss_ get_device_mountpoint(const ss_ &devname0)
 
 void handle_changed_partitions()
 {
-	if(!static_mount_paths.empty()){
-		if(current_mount_path != static_mount_paths[0]){
-			printf("Using static mount paths; primary %s\n", cs(static_mount_paths[0]));
+	if(!static_media_paths.empty()){
+		if(current_mount_path != static_media_paths[0]){
+			printf("Using static media paths:\n");
+			for(size_t i=0; i<static_media_paths.size(); i++){
+				printf("- %s\n", cs(static_media_paths[i]));
+			}
 			current_mount_device = "dummy";
-			current_mount_path = static_mount_paths[0];
+			current_mount_path = static_media_paths[0];
 			scan_current_mount();
 		}
 		return;
@@ -1973,7 +1997,7 @@ bool partitions_changed = false;
 
 void handle_mount()
 {
-	if(!static_mount_paths.empty())
+	if(!static_media_paths.empty())
 		return;
 
 	// Calls callbacks; eg. handle_changed_partitions()
@@ -2058,8 +2082,12 @@ void handle_track_find_strategy()
 		return;
 	timestamp = time(0);
 	if(!is_track_playing_fine()){
-		printf("Track isn't playing fine; executing track find strategy\n");
-		execute_track_find_strategy();
+		if(!static_media_paths.empty() && current_media_content.albums.empty()){
+			// If there are static media paths and there are no tracks, just don't care
+		} else {
+			printf("Track isn't playing fine; executing track find strategy\n");
+			execute_track_find_strategy();
+		}
 	}
 }
 
@@ -2075,20 +2103,21 @@ void do_intro()
 	printf("⌁ OVER POWERED TRACK SWITCH ⌁\n");
 }
 
-int main(int argc, char *argv[])
+// First call with command line arguments, then with config arguments
+int handle_args(int argc, char *argv[], const char *error_prefix, bool from_config)
 {
-	signal(SIGINT, sigint_handler);
-	startup_timestamp = time(0);
-	srand(time(0));
+	c55_argi = 0; // Reset c55_getopt
+	c55_cp = NULL; // Reset c55_getopt
 
-	const char opts[100] = "hs:d:S:m:D:UW:l:";
+	const char opts[100] = "hC:s:d:S:m:D:UW:l:";
 	const char usagefmt[1000] =
 			"Usage: %s [OPTION]...\n"
 			"  -h                   Show this help\n"
+			"  -C [path]            Configuration file path (default: $HOME/.config/opts/opts)\n"
 			"  -s [path]            Serial port device of Arduino (pass multiple -s to specify many)\n"
 			"  -d [dev1,dev2,...]   Block devices to track and mount (eg. sdc)\n"
 			"  -S [path]            Saved state path\n"
-			"  -m [path]            Static mount path; automounting is disabled if set and root privileges are not needed; multiple allowed\n"
+			"  -m [path]            Static media path; automounting is disabled if set and root privileges are not needed; multiple allowed\n"
 			"  -D [mode]            Set arduino serial debug mode (off/raw/fancy)\n"
 			"  -U                   Minimize display updates\n"
 			"  -W [integer]         Set text display width\n"
@@ -2103,6 +2132,10 @@ int main(int argc, char *argv[])
 		case 'h':
 			printf(usagefmt, argv[0]);
 			return 1;
+		case 'C':
+			config_path = c55_optarg;
+			config_must_be_readable = true;
+			break;
 		case 's':
 			arduino_serial_paths.push_back(c55_optarg);
 			break;
@@ -2123,7 +2156,12 @@ int main(int argc, char *argv[])
 			saved_state_path = c55_optarg;
 			break;
 		case 'm':
-			static_mount_paths.push_back(c55_optarg);
+			if(from_config && there_are_command_line_static_media_paths){
+				// Don't add from config if some were specified on command line
+			} else {
+				static_media_paths.push_back(c55_optarg);
+				there_are_command_line_static_media_paths = !from_config;
+			}
 			break;
 		case 'D':
 			arduino_serial_debug_mode = c55_optarg;
@@ -2138,13 +2176,124 @@ int main(int argc, char *argv[])
 			enabled_log_sources.insert(c55_optarg);
 			break;
 		default:
+			if(error_prefix)
+				fprintf(stderr, "%s\n", error_prefix);
 			fprintf(stderr, "Invalid argument\n");
 			fprintf(stderr, usagefmt, argv[0]);
 			return 1;
 		}
 	}
+	return 0;
+}
 
-	if(track_devices.empty() && static_mount_paths.empty()){
+void generate_default_paths()
+{
+	const char *home = getenv("HOME");
+	if(!home){
+		printf("$HOME not set - cannot read config\n");
+		return;
+	}
+
+	if(config_path == "__default__"){
+		config_path = ss_() + home + "/.config/opts/opts";
+
+		if(LOG_DEBUG)
+			printf("Default config_path: \"%s\"\n", cs(config_path));
+	}
+
+	if(saved_state_path == "__default__"){
+		ss_ config_dir = ss_() + home + "/.config/opts";
+		saved_state_path = config_dir + "/state";
+
+		if(LOG_DEBUG)
+			printf("Default saved_state_path: \"%s\"\n", cs(saved_state_path));
+
+		if(mkdir_p(config_dir.c_str())){
+			printf("Warning: Failed to create directory: \"%s\"\n", cs(config_dir));
+		}
+	}
+}
+
+// Modifies content to contain null bytes
+bool read_config(char *content, size_t content_max_len, sv_<char*> &argv)
+{
+	if(LOG_DEBUG)
+		printf("Loading config file from %s\n", cs(config_path));
+	ss_ config_content;
+	if(!read_file_content(config_path, config_content)){
+		if(LOG_DEBUG || config_must_be_readable)
+			printf("Couldn't read config file \"%s\"\n", cs(config_path));
+		return config_must_be_readable ? false : true;
+	}
+	// Translate ~ in config to $HOME
+	const char *home = getenv("HOME");
+	if(home){
+		replace_string(config_content, "~", home);
+	}
+	// Prepend with argv[0]="opts"
+	size_t content_len = snprintf(content, content_max_len, "opts %s", cs(config_content));
+	bool argv_added = false;
+	char current_quote = 0;
+	for(size_t i=0; i<content_len; i++){
+		char &c = content[i];
+		if(current_quote){
+			if(c == current_quote){
+				current_quote = 0;
+				continue;
+			}
+			continue;
+		}
+		if(c == '"' || c == '\''){
+			current_quote = c;
+			continue;
+		}
+		if(c == ' ' || c == '\n' || c == '\r' || c == '\t'){
+			c = 0;
+			argv_added = false;
+			continue;
+		}
+		if(!argv_added){
+			argv.push_back(&content[i]);
+			argv_added = true;
+		}
+	}
+	if(current_quote){
+		printf("Warning: Config file has non-ending quote\n");
+	}
+	return true;
+}
+
+int main(int argc, char *argv[])
+{
+	signal(SIGINT, sigint_handler);
+	startup_timestamp = time(0);
+	srand(time(0));
+
+	if(int r = handle_args(argc, argv, NULL, false) != 0){
+		return r;
+	}
+
+	generate_default_paths();
+
+	char config_content[5000];
+	sv_<char*> config_argv;
+	if(!read_config(config_content, sizeof config_content, config_argv)){
+		return 1;
+	}
+
+	if(LOG_DEBUG){
+		printf("Config args:\n");
+		for(char *a : config_argv){
+			printf("  %s\n", a);
+		}
+	}
+
+	if(int r = handle_args(config_argv.size(), &config_argv[0],
+			"Error in configration file:", true) != 0){
+		return r;
+	}
+
+	if(track_devices.empty() && static_media_paths.empty()){
 		printf("Use -d or -m\n");
 		return 1;
 	}
@@ -2175,11 +2324,11 @@ int main(int argc, char *argv[])
 
     check_mpv_error(mpv_initialize(mpv));
 
-	handle_changed_track_progress_mode();
-
-	if(enabled_log_sources.count("debug"))
+	if(LOG_DEBUG)
 		printf("Doing initial partition scan\n");
 	handle_changed_partitions();
+
+	handle_changed_track_progress_mode();
 
 	while(do_main_loop){
 		handle_stdin();

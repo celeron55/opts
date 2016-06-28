@@ -9,5 +9,6 @@ cp src/*.h "/tmp/opts-$ver/src"
 mkdir "/tmp/opts-$ver/common"
 cp common/*.hpp "/tmp/opts-$ver/common"
 cp build.sh "/tmp/opts-$ver/"
+cp manual.txt "/tmp/opts-$ver/"
 cd /tmp
 tar cjf "opts-$ver.tar.gz" "opts-$ver"
