@@ -1013,12 +1013,38 @@ void handle_control_random_album()
 	start_at_relative_track(0, 0, true);
 }
 
+void handle_control_random_album_approx_num_tracks(size_t approx_num_tracks)
+{
+	auto &mc = current_media_content;
+	sv_<int> suitable_albums;
+	for(size_t i=0; i<mc.albums.size(); i++){
+		auto &album = mc.albums[i];
+		if(album.tracks.size() >= approx_num_tracks * 0.75 &&
+				album.tracks.size() <= approx_num_tracks * 1.5){
+			suitable_albums.push_back(i);
+		}
+	}
+	if(suitable_albums.empty()){
+		printf("No suitable albums\n");
+		return;
+	}
+	int album_i = suitable_albums[rand() % suitable_albums.size()];
+	auto &album = mc.albums[album_i];
+	printf("Picking random album %i (%zu tracks) from %zu suitable albums\n",
+			album_i, album.tracks.size(), suitable_albums.size());
+	current_cursor.album_i = album_i;
+	current_cursor.track_i = 0;
+	start_at_relative_track(0, 0, true);
+}
+
 void handle_stdin()
 {
 	ss_ stdin_stuff = read_any(0); // 0=stdin
 	for(char c : stdin_stuff){
 		if(stdin_command_accu.put_char(c)){
 			ss_ command = stdin_command_accu.command();
+			Strfnd f(command);
+			ss_ w1 = f.next(" ");
 			if(command == "help" || command == "h" || command == "?"){
 				printf("Commands:\n");
 				printf("  next, n, +\n");
@@ -1034,7 +1060,7 @@ void handle_stdin()
 				printf("  /<string> (search)\n");
 				printf("  album <n>\n");
 				printf("  track <n>\n");
-				printf("  randomalbum, ra, r\n");
+				printf("  randomalbum, ra, r <approx. #tracks (optional)>\n");
 				printf("  albumlist, al\n");
 				printf("  tracklist, tl\n");
 			} else if(command == "next" || command == "n" || command == "+"){
@@ -1070,8 +1096,12 @@ void handle_stdin()
 			} else if(command.size() >= 6 && command.substr(0, 6) == "track "){
 				int track_n = stoi(command.substr(6), -1);
 				handle_control_track_number(track_n);
-			} else if(command == "randomalbum" || command == "ra" || command == "r"){
-				handle_control_random_album();
+			} else if(w1 == "randomalbum" || w1 == "ra" || w1 == "r"){
+				int approx_num_tracks = stoi(f.next(""), -1);
+				if(approx_num_tracks == -1)
+					handle_control_random_album();
+				else
+					handle_control_random_album_approx_num_tracks(approx_num_tracks);
 			} else if(command == "albumlist" || command == "al"){
 				for(size_t i=0; i<current_media_content.albums.size(); i++)
 					printf("#%zu: %s\n", i+1, cs(current_media_content.albums[i].name));
