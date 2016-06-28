@@ -1112,6 +1112,10 @@ void handle_stdin()
 			ss_ command = stdin_command_accu.command();
 			Strfnd f(command);
 			ss_ w1 = f.next(" ");
+			Strfnd fn(command);
+			fn.while_any("abcdefghijklmnopqrstuvwxyz");
+			ss_ w1n = command.substr(0, fn.where());
+			fn.while_any(" ");
 			if(command == "help" || command == "h" || command == "?"){
 				printf("Commands:\n");
 				printf("  next, n, +\n");
@@ -1119,8 +1123,8 @@ void handle_stdin()
 				printf("  nextalbum, na, N, .\n");
 				printf("  prevalbum, pa, P, ,\n");
 				printf("  pause, [space][enter]\n");
-				printf("  fwd, f\n");
-				printf("  bwd, b\n");
+				printf("  fwd, f <seconds: optional>\n");
+				printf("  bwd, b <seconds: optional>\n");
 				printf("  playmode, m\n");
 				printf("  playmodeget, mg\n");
 				printf("  pos\n");
@@ -1129,8 +1133,8 @@ void handle_stdin()
 				printf("  album <n>\n");
 				printf("  track <n>\n");
 				printf("  randomalbum, ra, r <approx. #tracks (optional)>\n");
-				printf("  rg <min. #tracks> (greater)\n");
-				printf("  rl <max. #tracks> (lower)\n");
+				printf("  rg, g <min. #tracks> (greater)\n");
+				printf("  rl, l <max. #tracks> (lower)\n");
 				printf("  randomtrack, rt\n");
 				printf("  albumlist, al, la\n");
 				printf("  tracklist, tl, lt\n");
@@ -1146,13 +1150,15 @@ void handle_stdin()
 				handle_control_prevalbum();
 			} else if(command == "pause" || command == " "){
 				handle_control_playpause();
-			} else if(command == "fwd" || command == "f"){
-				mpv_command_string(mpv, "seek +30");
-				current_cursor.time_pos += 30;
+			} else if(w1n == "fwd" || w1n == "f"){
+				int seconds = stoi(fn.next(""), 30);
+				mpv_command_string(mpv, cs("seek +"+itos(seconds)));
+				current_cursor.time_pos += seconds;
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-			} else if(command == "bwd" || command == "b"){
-				mpv_command_string(mpv, "seek -30");
-				current_cursor.time_pos -= 30;
+			} else if(w1n == "bwd" || w1n == "b"){
+				int seconds = stoi(fn.next(""), 30);
+				mpv_command_string(mpv, cs("seek -"+itos(seconds)));
+				current_cursor.time_pos -= seconds;
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "playmode" || command == "m"){
 				handle_control_playmode();
@@ -1165,26 +1171,38 @@ void handle_stdin()
 			} else if(command.size() >= 2 && command.substr(0, 1) == "/"){
 				ss_ searchstring = command.substr(1);
 				handle_control_search(searchstring);
-			} else if(command.size() >= 6 && command.substr(0, 6) == "album "){
-				int album_n = stoi(command.substr(6), -1);
+			} else if(w1n == "album"){
+				int album_n = stoi(fn.next(""), -1);
 				handle_control_album_number(album_n);
-			} else if(command.size() >= 6 && command.substr(0, 6) == "track "){
-				int track_n = stoi(command.substr(6), -1);
+			} else if(w1n == "track"){
+				int track_n = stoi(fn.next(""), -1);
 				handle_control_track_number(track_n);
-			} else if(w1 == "randomalbum" || w1 == "ra" || w1 == "r"){
-				int approx_num_tracks = stoi(f.next(""), -1);
+			} else if(w1n == "randomalbum" || w1n == "ra" || w1n == "r"){
+				int approx_num_tracks = stoi(fn.next(""), -1);
 				if(approx_num_tracks == -1)
 					handle_control_random_album();
 				else
 					handle_control_random_album_approx_num_tracks(approx_num_tracks);
-			} else if(w1 == "rg"){
-				int min_num_tracks = stoi(f.next(""), -1);
-				if(min_num_tracks != -1)
+			} else if(w1n == "rg" || w1n == "g"){
+				static int last_min_num_tracks = -1;
+				int min_num_tracks = stoi(fn.next(""), -1);
+				if(min_num_tracks != -1){
 					handle_control_random_album_min_num_tracks(min_num_tracks);
-			} else if(w1 == "rl"){
-				int max_num_tracks = stoi(f.next(""), -1);
-				if(max_num_tracks != -1)
+					last_min_num_tracks = min_num_tracks;
+				} else if(last_min_num_tracks != -1){
+					printf("Using previous parameter: %i\n", last_min_num_tracks);
+					handle_control_random_album_min_num_tracks(last_min_num_tracks);
+				}
+			} else if(w1n == "rl" || w1n == "l"){
+				static int last_max_num_tracks = -1;
+				int max_num_tracks = stoi(fn.next(""), -1);
+				if(max_num_tracks != -1){
 					handle_control_random_album_max_num_tracks(max_num_tracks);
+					last_max_num_tracks = max_num_tracks;
+				} else if(last_max_num_tracks != -1){
+					printf("Using previous parameter: %i\n", last_max_num_tracks);
+					handle_control_random_album_max_num_tracks(last_max_num_tracks);
+				}
 			} else if(w1 == "randomtrack" || w1 == "rt"){
 				handle_control_random_track();
 			} else if(command == "albumlist" || command == "al" || command == "la"){
@@ -1204,14 +1222,14 @@ void handle_stdin()
 			} else if(command == "i" || command == "info"){
 				printf("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-			} else if(command.size() >= 9 && command.substr(0, 9) == "keypress "){
-				int key = stoi(command.substr(9), -1);
+			} else if(w1n == "keypress"){
+				int key = stoi(fn.next(""), -1);
 				if(key != -1){
 					void handle_key_press(int key);
 					handle_key_press(key);
 				}
-			} else if(command.size() >= 11 && command.substr(0, 11) == "keyrelease "){
-				int key = stoi(command.substr(11), -1);
+			} else if(w1n == "keyrelease"){
+				int key = stoi(fn.next(""), -1);
 				if(key != -1){
 					void handle_key_release(int key);
 					handle_key_release(key);
