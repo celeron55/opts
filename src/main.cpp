@@ -1047,6 +1047,50 @@ void handle_control_random_album_approx_num_tracks(size_t approx_num_tracks)
 	start_at_relative_track(0, 0, true);
 }
 
+void handle_control_random_album_min_num_tracks(size_t min_num_tracks)
+{
+	auto &mc = current_media_content;
+	sv_<int> suitable_albums;
+	for(size_t i=0; i<mc.albums.size(); i++){
+		auto &album = mc.albums[i];
+		if(album.tracks.size() >= min_num_tracks)
+			suitable_albums.push_back(i);
+	}
+	if(suitable_albums.empty()){
+		printf("No suitable albums\n");
+		return;
+	}
+	int album_i = suitable_albums[rand() % suitable_albums.size()];
+	auto &album = mc.albums[album_i];
+	printf("Picking random album %i (%zu tracks) from %zu suitable albums\n",
+			album_i, album.tracks.size(), suitable_albums.size());
+	current_cursor.album_i = album_i;
+	current_cursor.track_i = 0;
+	start_at_relative_track(0, 0, true);
+}
+
+void handle_control_random_album_max_num_tracks(size_t max_num_tracks)
+{
+	auto &mc = current_media_content;
+	sv_<int> suitable_albums;
+	for(size_t i=0; i<mc.albums.size(); i++){
+		auto &album = mc.albums[i];
+		if(album.tracks.size() <= max_num_tracks)
+			suitable_albums.push_back(i);
+	}
+	if(suitable_albums.empty()){
+		printf("No suitable albums\n");
+		return;
+	}
+	int album_i = suitable_albums[rand() % suitable_albums.size()];
+	auto &album = mc.albums[album_i];
+	printf("Picking random album %i (%zu tracks) from %zu suitable albums\n",
+			album_i, album.tracks.size(), suitable_albums.size());
+	current_cursor.album_i = album_i;
+	current_cursor.track_i = 0;
+	start_at_relative_track(0, 0, true);
+}
+
 void handle_control_random_track()
 {
 	auto &mc = current_media_content;
@@ -1085,6 +1129,8 @@ void handle_stdin()
 				printf("  album <n>\n");
 				printf("  track <n>\n");
 				printf("  randomalbum, ra, r <approx. #tracks (optional)>\n");
+				printf("  rg <min. #tracks> (greater)\n");
+				printf("  rl <max. #tracks> (lower)\n");
 				printf("  randomtrack, rt\n");
 				printf("  albumlist, al\n");
 				printf("  tracklist, tl\n");
@@ -1130,6 +1176,14 @@ void handle_stdin()
 					handle_control_random_album();
 				else
 					handle_control_random_album_approx_num_tracks(approx_num_tracks);
+			} else if(w1 == "rg"){
+				int min_num_tracks = stoi(f.next(""), -1);
+				if(min_num_tracks != -1)
+					handle_control_random_album_min_num_tracks(min_num_tracks);
+			} else if(w1 == "rl"){
+				int max_num_tracks = stoi(f.next(""), -1);
+				if(max_num_tracks != -1)
+					handle_control_random_album_max_num_tracks(max_num_tracks);
 			} else if(w1 == "randomtrack" || w1 == "rt"){
 				handle_control_random_track();
 			} else if(command == "albumlist" || command == "al"){
