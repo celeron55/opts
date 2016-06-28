@@ -1135,6 +1135,7 @@ void handle_stdin()
 				printf("  albumlist, al, la\n");
 				printf("  tracklist, tl, lt\n");
 				printf("  intro\n");
+				printf("  i, info (playmodeget + pos)\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
@@ -1200,6 +1201,9 @@ void handle_stdin()
 			} else if(command == "intro"){
 				void do_intro();
 				do_intro();
+			} else if(command == "i" || command == "info"){
+				printf("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
+				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command.size() >= 9 && command.substr(0, 9) == "keypress "){
 				int key = stoi(command.substr(9), -1);
 				if(key != -1){
