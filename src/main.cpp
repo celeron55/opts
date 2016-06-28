@@ -707,20 +707,6 @@ void load_and_play_current_track_from_start()
 	check_mpv_error(mpv_command(mpv, cmd));
 
 	on_loadfile(0, track.display_name);
-
-	/*// Check if the file actually even exists; if not, increment a
-	// counter of broken tracks and re-scan media at some point
-	if(access(track.path.c_str(), F_OK) == -1){
-		printf("This track has disappeared\n");
-		disappeared_tracks.insert(track.path);
-		track_was_loaded = false;
-		if(disappeared_tracks.size() > get_total_tracks(current_media_content) / 10 ||
-				disappeared_tracks.size() >= 10){
-			printf("Too many disappeared tracks; re-scanning media\n");
-			void scan_current_mount();
-			scan_current_mount();
-		}
-	}*/
 }
 
 void refresh_track()
@@ -1765,6 +1751,13 @@ void scan_current_mount()
 	printf("Scanned %zu albums.\n", current_media_content.albums.size());
 
 	current_cursor = last_succesfully_playing_cursor;
+
+	if(current_cursor.album_i == 0 && current_cursor.track_i == 0 &&
+			current_cursor.track_name == ""){
+		if(enabled_log_sources.count("debug"))
+			printf("Starting without saved state; picking random album\n");
+		handle_control_random_album();
+	}
 
 	if(!force_resolve_track(current_media_content, current_cursor)){
 		printf("Force-resolve track failed\n");
