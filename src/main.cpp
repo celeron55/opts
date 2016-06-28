@@ -1064,6 +1064,7 @@ void handle_stdin()
 				printf("  randomalbum, ra, r <approx. #tracks (optional)>\n");
 				printf("  albumlist, al\n");
 				printf("  tracklist, tl\n");
+				printf("  intro\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
@@ -1114,6 +1115,9 @@ void handle_stdin()
 					for(size_t i=0; i<album.tracks.size(); i++)
 						printf("#%zu: %s\n", i+1, cs(album.tracks[i].display_name));
 				}
+			} else if(command == "intro"){
+				void do_intro();
+				do_intro();
 			} else if(command.size() >= 9 && command.substr(0, 9) == "keypress "){
 				int key = stoi(command.substr(9), -1);
 				if(key != -1){
@@ -1942,9 +1946,14 @@ void sigint_handler(int _)
 	do_main_loop = false;
 }
 
-int main(int argc, char *argv[])
+void do_intro()
 {
 	printf("⌁ OVER POWERED TRACK SWITCH ⌁\n");
+}
+
+int main(int argc, char *argv[])
+{
+	do_intro();
 
 	signal(SIGINT, sigint_handler);
 	startup_timestamp = time(0);
