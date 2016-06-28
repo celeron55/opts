@@ -1116,8 +1116,8 @@ void handle_stdin()
 				printf("Commands:\n");
 				printf("  next, n, +\n");
 				printf("  prev, p, -\n");
-				printf("  nextalbum, N, .\n");
-				printf("  prevalbum, P, ,\n");
+				printf("  nextalbum, na, N, .\n");
+				printf("  prevalbum, pa, P, ,\n");
 				printf("  pause, [space][enter]\n");
 				printf("  fwd, f\n");
 				printf("  bwd, b\n");
@@ -1140,9 +1140,9 @@ void handle_stdin()
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
 				handle_control_prev();
-			} else if(command == "nextalbum" || command == "N" || command == "."){
+			} else if(command == "nextalbum" || command == "na" || command == "N" || command == "."){
 				handle_control_nextalbum();
-			} else if(command == "prevalbum" || command == "P" || command == ","){
+			} else if(command == "prevalbum" || command == "pa" || command == "P" || command == ","){
 				handle_control_prevalbum();
 			} else if(command == "pause" || command == " "){
 				handle_control_playpause();
