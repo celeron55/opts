@@ -1049,6 +1049,19 @@ void handle_control_random_album_approx_num_tracks(size_t approx_num_tracks)
 	start_at_relative_track(0, 0, true);
 }
 
+void handle_control_random_track()
+{
+	auto &mc = current_media_content;
+	auto &cursor = current_cursor;
+	if(cursor.album_i < 0 || cursor.album_i >= (int)mc.albums.size())
+		return;
+	auto &album = mc.albums[cursor.album_i];
+	int track_i = rand() % album.tracks.size();
+	printf("Picking random track %i\n", track_i);
+	current_cursor.track_i = track_i;
+	start_at_relative_track(0, 0, false);
+}
+
 void handle_stdin()
 {
 	ss_ stdin_stuff = read_any(0); // 0=stdin
@@ -1073,6 +1086,7 @@ void handle_stdin()
 				printf("  album <n>\n");
 				printf("  track <n>\n");
 				printf("  randomalbum, ra, r <approx. #tracks (optional)>\n");
+				printf("  randomtrack, rt\n");
 				printf("  albumlist, al\n");
 				printf("  tracklist, tl\n");
 				printf("  intro\n");
@@ -1115,6 +1129,8 @@ void handle_stdin()
 					handle_control_random_album();
 				else
 					handle_control_random_album_approx_num_tracks(approx_num_tracks);
+			} else if(w1 == "randomtrack" || w1 == "rt"){
+				handle_control_random_track();
 			} else if(command == "albumlist" || command == "al"){
 				for(size_t i=0; i<current_media_content.albums.size(); i++)
 					printf("#%zu: %s\n", i+1, cs(current_media_content.albums[i].name));
