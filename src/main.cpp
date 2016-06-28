@@ -1464,7 +1464,9 @@ void automated_start_play_next_track()
 
 void do_something_instead_of_idle()
 {
-	printf("Trying to do something instead of idle\n");
+	if(enabled_log_sources.count("debug"))
+		printf("Trying to do something instead of idle\n");
+
 	if(is_track_at_natural_end()){
 		automated_start_play_next_track();
 	} else {
