@@ -1126,6 +1126,7 @@ void handle_stdin()
 				printf("  tracklist, tl, lt\n");
 				printf("  intro\n");
 				printf("  i, info (playmodeget + pos)\n");
+				printf("  path (show path of current track)\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
@@ -1208,6 +1209,9 @@ void handle_stdin()
 			} else if(command == "i" || command == "info"){
 				printf("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+			} else if(command == "path"){
+				Track track = get_track(current_media_content, current_cursor);
+				printf("%s\n", cs(track.path));
 			} else if(w1n == "keypress"){
 				int key = stoi(fn.next(""), -1);
 				if(key != -1){
@@ -1668,10 +1672,11 @@ bool filename_supported(const ss_ &name)
 		"mp3", "mpga", "ogg", "oma", "opus", "qcp", "ra", "ram", "wav", "wma",
 		"xspf", "3g2", "3gp", "3gpp", "asf", "avi", "divx", "f4v", "flv",
 		"h264", "ifo", "m2ts", "m4v", "mkv", "mod", "mov", "mp4", "mpeg",
-		"mpg", "mswmm", "mts", "mxf", "ogv", "rm", "srt", "swf", "ts", "vep",
-		"vob", "webm", "wlmp", "wmv", "aac", "cue", "d64", "flac", "it",
-		"m3u", "m4a", "mid", "mod", "mp3", "mp4", "ogg", "pls", "rar", "s3m",
-		"sfv", "sid", "spc", "swf", "t64", "wav", "xd", "xm",
+		"mpg", "mswmm", "mts", "mxf", "ogv", "rm", "swf", "ts", "vep", "vob",
+		"webm", "wlmp", "wmv", "aac", "cue", "d64", "flac", "it", "m4a", "mid",
+		"mod", "mp3", "mp4", "ogg", "s3m", "sfv", "sid", "swf", "wav", "xd",
+		// These don't really work properly (playlists or unsupported formats)
+		//"m3u", "pls", "srt", "spc", "t64", "xm", "rar"
 	};
 
 	// Check file extension
