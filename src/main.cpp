@@ -11,6 +11,7 @@
 #include "../common/common.hpp"
 #include <mpv/client.h>
 #include <fstream>
+#include <algorithm> // sort
 #include <sys/poll.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -114,6 +115,9 @@ struct Track
 	Track(const ss_ &path="", const ss_ &display_name=""):
 		path(path), display_name(display_name)
 	{}
+	bool operator < (const Track &other){
+		return (path < other.path);
+	}
 };
 
 struct Album
@@ -1725,7 +1729,8 @@ void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_al
 		}
 	}
 
-	// TODO: Sort tracks by file name
+	// Sort by path
+	std::sort(root_album.tracks.begin(), root_album.tracks.end());
 
 	if(!root_album.tracks.empty()){
 		if(parent_dir_album){
