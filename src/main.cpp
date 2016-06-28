@@ -1730,6 +1730,8 @@ void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_al
 		}
 	}
 
+	// TODO: Sort tracks by file name
+
 	if(!root_album.tracks.empty()){
 		if(parent_dir_album){
 			// If there is only one track, don't create a new album and instead
