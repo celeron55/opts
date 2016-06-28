@@ -818,22 +818,20 @@ void handle_control_prevalbum()
 	start_at_relative_track(-1, 0);
 }
 
+const char* tpm_to_string(TrackProgressMode m)
+{
+	return m == TPM_SEQUENTIAL ? "SEQUENTIAL" :
+			m == TPM_REPEAT ? "REPEAT" :
+			m == TPM_REPEAT_TRACK ? "TRACK REPEAT" :
+			m == TPM_SHUFFLE ? "NOT IMPL: SHUFFLE" :
+			"UNKNOWN";
+}
+
 void handle_changed_track_progress_mode()
 {
-	const char *mode_s = 
-			track_progress_mode == TPM_SEQUENTIAL ? "SEQUENTIAL" :
-			track_progress_mode == TPM_REPEAT ? "REPEAT" :
-			track_progress_mode == TPM_REPEAT_TRACK ? "TRACK REPEAT" :
-			track_progress_mode == TPM_SHUFFLE ? "SHUFFLE" :
-			"UNKNOWN";
+	printf("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
 
-	printf("Track progress mode: %s\n", mode_s);
-
-	if(track_progress_mode == TPM_SHUFFLE){
-		arduino_set_temp_text("NOT IMPL");
-	} else {
-		arduino_set_temp_text(mode_s);
-	}
+	arduino_set_temp_text(tpm_to_string(track_progress_mode));
 
 	// Seamless looping!
 	if(track_progress_mode == TPM_REPEAT_TRACK){
@@ -1080,6 +1078,7 @@ void handle_stdin()
 				printf("  fwd, f\n");
 				printf("  bwd, b\n");
 				printf("  playmode, m\n");
+				printf("  playmodeget, mg\n");
 				printf("  pos\n");
 				printf("  save\n");
 				printf("  /<string> (search)\n");
@@ -1110,6 +1109,8 @@ void handle_stdin()
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "playmode" || command == "m"){
 				handle_control_playmode();
+			} else if(command == "playmodeget" || command == "mg"){
+				printf("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
 			} else if(command == "pos"){
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "save"){
