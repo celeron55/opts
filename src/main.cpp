@@ -1679,7 +1679,8 @@ bool filename_supported(const ss_ &name)
 	return supported_file_extensions.count(ext);
 }
 
-void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_albums)
+void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_albums,
+		Album *parent_dir_album=NULL)
 {
 	DirLister dl(path.c_str());
 
@@ -1703,12 +1704,22 @@ void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_al
 			root_album.tracks.push_back(Track(path+"/"+fname, stripped));
 		} else if(ftype == FS_DIR){
 			//printf("Dir: %s\n", cs(path+"/"+fname));
-			scan_directory(fname, path+"/"+fname, result_albums);
+			scan_directory(fname, path+"/"+fname, result_albums, &root_album);
 		}
 	}
 
-	if(!root_album.tracks.empty())
-		result_albums.push_back(root_album);
+	if(!root_album.tracks.empty()){
+		if(parent_dir_album){
+			// If there is only one track, don't create a new album and instead
+			// just push the track to the parent directory album
+			if(root_album.tracks.size() == 1)
+				parent_dir_album->tracks.push_back(root_album.tracks[0]);
+			else
+				result_albums.push_back(root_album);
+		} else {
+			result_albums.push_back(root_album);
+		}
+	}
 }
 
 void scan_current_mount()
