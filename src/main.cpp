@@ -834,7 +834,7 @@ void handle_changed_track_progress_mode()
 	arduino_set_extra_segments();
 }
 
-void handle_control_shufflerepeat()
+void handle_control_playmode()
 {
 	if(track_progress_mode < TPM_NUM_MODES - 1)
 		track_progress_mode = (TrackProgressMode)(track_progress_mode + 1);
@@ -1054,7 +1054,7 @@ void handle_stdin()
 				printf("  pause, [space][enter]\n");
 				printf("  fwd, f\n");
 				printf("  bwd, b\n");
-				printf("  shufflerepeat, sf\n");
+				printf("  playmode, m\n");
 				printf("  pos\n");
 				printf("  save\n");
 				printf("  /<string> (search)\n");
@@ -1081,8 +1081,8 @@ void handle_stdin()
 				mpv_command_string(mpv, "seek -30");
 				current_cursor.time_pos -= 30;
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
-			} else if(command == "shufflerepeat" || command == "sf"){
-				handle_control_shufflerepeat();
+			} else if(command == "playmode" || command == "m"){
+				handle_control_playmode();
 			} else if(command == "pos"){
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "save"){
@@ -1173,7 +1173,7 @@ void handle_key_press(int key)
 	if(key == 17){ // Upmost center
 		if(stateful_input_mode != SIM_NONE)
 			handle_control_stateful_input_cancel();
-		handle_control_shufflerepeat();
+		handle_control_playmode();
 		return;
 	}
 	if(key == 18){ // Right upper
