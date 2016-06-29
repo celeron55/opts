@@ -162,8 +162,8 @@ Track get_track(const MediaContent &mc, const PlayCursor &cursor);
 // tracks inside albums can progress differencly.
 enum TrackProgressMode {
 	TPM_SEQUENTIAL,
-	TPM_REPEAT,
-	TPM_REPEAT_TRACK,
+	TPM_ALBUM_REPEAT,
+	TPM_ALBUM_REPEAT_TRACK,
 	TPM_SHUFFLE,
 
 	TPM_NUM_MODES,
@@ -266,7 +266,7 @@ bool is_track_playing_fine()
 		return false;
 	}
 
-	if(track_progress_mode != TPM_REPEAT_TRACK){
+	if(track_progress_mode != TPM_ALBUM_REPEAT_TRACK){
 		if(access(track.path.c_str(), F_OK) == -1){
 			printf("Track is not playing fine because the file %s does not "
 					"exist (track.path).\n", cs(track.path));
@@ -285,7 +285,7 @@ bool is_track_playing_fine()
 
 bool is_track_at_natural_end()
 {
-	if(track_progress_mode == TPM_REPEAT_TRACK){
+	if(track_progress_mode == TPM_ALBUM_REPEAT_TRACK){
 		return false;
 	}
 
@@ -765,10 +765,10 @@ void arduino_set_extra_segments()
 	switch(track_progress_mode){
 	case TPM_SEQUENTIAL:
 		break;
-	case TPM_REPEAT:
+	case TPM_ALBUM_REPEAT:
 		extra_segment_flags |= (1<<DISPLAY_FLAG_REPEAT);
 		break;
-	case TPM_REPEAT_TRACK:
+	case TPM_ALBUM_REPEAT_TRACK:
 		extra_segment_flags |= (1<<DISPLAY_FLAG_REPEAT) | (1<<DISPLAY_FLAG_REPEAT_ONE);
 		break;
 	case TPM_SHUFFLE:
@@ -824,8 +824,8 @@ void handle_control_prevalbum()
 const char* tpm_to_string(TrackProgressMode m)
 {
 	return m == TPM_SEQUENTIAL ? "SEQUENTIAL" :
-			m == TPM_REPEAT ? "REPEAT" :
-			m == TPM_REPEAT_TRACK ? "TRACK REPEAT" :
+			m == TPM_ALBUM_REPEAT ? "ALBUM REPEAT" :
+			m == TPM_ALBUM_REPEAT_TRACK ? "TRACK REPEAT" :
 			m == TPM_SHUFFLE ? "NOT IMPL: SHUFFLE" :
 			"UNKNOWN";
 }
@@ -837,7 +837,7 @@ void handle_changed_track_progress_mode()
 	arduino_set_temp_text(tpm_to_string(track_progress_mode));
 
 	// Seamless looping!
-	if(track_progress_mode == TPM_REPEAT_TRACK){
+	if(track_progress_mode == TPM_ALBUM_REPEAT_TRACK){
 		mpv_set_property_string(mpv, "loop", "inf");
 	} else {
 		mpv_set_property_string(mpv, "loop", "no");
@@ -1545,7 +1545,7 @@ void automated_start_play_next_track()
 		printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 		load_and_play_current_track_from_start();
 		break;
-	case TPM_REPEAT:
+	case TPM_ALBUM_REPEAT:
 		current_cursor.track_i++;
 		current_cursor.time_pos = 0;
 		current_cursor.stream_pos = 0;
@@ -1555,7 +1555,7 @@ void automated_start_play_next_track()
 		printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 		load_and_play_current_track_from_start();
 		break;
-	case TPM_REPEAT_TRACK:
+	case TPM_ALBUM_REPEAT_TRACK:
 		current_cursor.time_pos = 0;
 		current_cursor.stream_pos = 0;
 		printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
