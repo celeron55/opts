@@ -918,6 +918,9 @@ void loop()
 			if(g_raspberry_real_power_off_delay == 0){
 				// Power down raspberry pi
 				digitalWrite(PIN_RASPBERRY_POWER_OFF, HIGH);
+				// Reset text
+				snprintf(g_raspberry_display_text, sizeof g_raspberry_display_text,
+						"RASPBERR");
 			}
 		}
 
