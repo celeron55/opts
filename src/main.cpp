@@ -1694,12 +1694,13 @@ bool filename_supported(const ss_ &name)
 		"gsm", "iff", "kar", "m4a", "m4p", "m4r", "mid", "midi", "mmf", "mp2",
 		"mp3", "mpga", "ogg", "oma", "opus", "qcp", "ra", "ram", "wav", "wma",
 		"xspf", "3g2", "3gp", "3gpp", "asf", "avi", "divx", "f4v", "flv",
-		"h264", "ifo", "m2ts", "m4v", "mkv", "mod", "mov", "mp4", "mpeg",
-		"mpg", "mswmm", "mts", "mxf", "ogv", "rm", "swf", "ts", "vep", "vob",
-		"webm", "wlmp", "wmv", "aac", "cue", "d64", "flac", "it", "m4a", "mid",
-		"mod", "mp3", "mp4", "ogg", "s3m", "sfv", "sid", "swf", "wav", "xd",
+		"h264", "ifo", "m2ts", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg",
+		"mswmm", "mts", "mxf", "ogv", "rm", "swf", "ts", "vep", "vob", "webm",
+		"wlmp", "wmv", "aac", "cue", "d64", "flac", "m4a", "mp4", "s3m", "sfv",
+		"swf", "wav", "xd",
 		// These don't really work properly (playlists or unsupported formats)
-		//"m3u", "pls", "srt", "spc", "t64", "xm", "rar"
+		//"m3u", "pls", "srt", "spc", "t64", "xm", "rar", "sid", "mid", "mod",
+		//"it"
 	};
 
 	// Check file extension
