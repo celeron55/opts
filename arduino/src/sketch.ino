@@ -547,9 +547,13 @@ void handle_encoder_value(int8_t rot)
 	} else if(g_config_option == CO_BENIS){
 		static int8_t a = 0;
 		a += rot;
-		if(a <= -4 || a >= 4){
-			g_benis_mode_enabled = !g_benis_mode_enabled;
+		if(a < -4){
 			a = 0;
+			g_benis_mode_enabled = false;
+			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+		} else if(a > 4){
+			a = 0;
+			g_benis_mode_enabled = true;
 			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
 		}
 		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
@@ -671,10 +675,15 @@ void handle_encoder()
 		}
 	}
 
-	if(rot != 0){
-		handle_encoder_value(rot);
+	if(lcd_is_key_pressed(g_current_keys, 28)){
+		// Ignore the encoder if the rotary knob is being pressed down
+		rot = 0;
+	} else {
+		// Use encoder delta value
+		if(rot != 0){
+			handle_encoder_value(rot);
+		}
 	}
-
 
 	g_encoder_last_state = (e1 ? 1 : 0) | (e2 ? 2 : 0);
 }
