@@ -112,6 +112,9 @@ MediaContent current_media_content;
 
 struct PlayCursor
 {
+protected:
+	TrackProgressMode track_progress_mode = TPM_NORMAL;
+public:
 	int album_seq_i = 0;
 	int track_seq_i = 0;
 	double time_pos = 0;
@@ -145,6 +148,37 @@ struct PlayCursor
 		} else {
 			return track_seq_i;
 		}
+	}
+
+	void set_track_progress_mode(const MediaContent &mc, TrackProgressMode new_tpm){
+		if(new_tpm == track_progress_mode)
+			return;
+		if(new_tpm == TPM_SHUFFLE_ALL){
+			// Resolve into shuffled indexing
+			const Album &album = mc.albums[album_seq_i];
+			if(album.shuffled_track_order.size() != album.tracks.size())
+				create_shuffled_order(album.shuffled_track_order, album.tracks.size());
+			for(int ti1=0; ti1<(int)album.tracks.size(); ti1++){
+				if((int)album.shuffled_track_order[ti1] == track_seq_i){
+					track_seq_i = ti1;
+					break;
+				}
+			}
+			for(int ai1=0; ai1<(int)mc.albums.size(); ai1++){
+				if((int)mc.shuffled_album_order[ai1] == album_seq_i){
+					album_seq_i = ai1;
+					break;
+				}
+			}
+		}
+		if(track_progress_mode == TPM_SHUFFLE_ALL){
+			// Resolve back from shuffled indexing
+			int new_album_seq_i = album_i(mc);
+			int new_track_seq_i = track_i(mc);
+			album_seq_i = new_album_seq_i;
+			track_seq_i = new_track_seq_i;
+		}
+		track_progress_mode = new_tpm;
 	}
 };
 
@@ -740,6 +774,8 @@ void handle_changed_track_progress_mode()
 	printf("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
 
 	arduino_set_temp_text(tpm_to_string(track_progress_mode));
+
+	current_cursor.set_track_progress_mode(current_media_content, track_progress_mode);
 
 	// Seamless looping!
 	if(track_progress_mode == TPM_ALBUM_REPEAT_TRACK){
