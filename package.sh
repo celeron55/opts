@@ -11,4 +11,4 @@ cp common/*.hpp "/tmp/opts-$ver/common"
 cp build.sh "/tmp/opts-$ver/"
 cp manual.txt "/tmp/opts-$ver/"
 cd /tmp
-tar cjf "opts-$ver.tar.gz" "opts-$ver"
+tar czf "opts-$ver.tar.gz" "opts-$ver"
