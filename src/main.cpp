@@ -322,11 +322,19 @@ void save_stuff()
 	if(LOG_DEBUG)
 		printf("Saving stuff to %s...\n", cs(saved_state_path));
 
+	// If at <5s into the track, start from the beginning next time
+	double save_time_pos = last_succesfully_playing_cursor.time_pos;
+	int save_stream_pos = last_succesfully_playing_cursor.stream_pos;
+	if(save_time_pos < 5){
+		save_time_pos = 0;
+		save_stream_pos = 0;
+	}
+
 	ss_ save_blob;
 	save_blob += itos(last_succesfully_playing_cursor.album_i) + ";";
 	save_blob += itos(last_succesfully_playing_cursor.track_i) + ";";
-	save_blob += ftos(last_succesfully_playing_cursor.time_pos) + ";";
-	save_blob += itos(last_succesfully_playing_cursor.stream_pos) + ";";
+	save_blob += ftos(save_time_pos) + ";";
+	save_blob += itos(save_stream_pos) + ";";
 	save_blob += itos(current_pause_mode == PM_PAUSE) + ";";
 	save_blob += itos(track_progress_mode) + ";";
 	save_blob += "\n";
