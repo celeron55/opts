@@ -461,7 +461,7 @@ bool force_resolve_track(const MediaContent &mc, PlayCursor &cursor)
 	bool album_found = false;
 	for(cursor1.album_seq_i=0; cursor1.album_seq_i<(int)mc.albums.size();
 			cursor1.album_seq_i++){
-		const Album &album = mc.albums[cursor.album_i(mc)];
+		const Album &album = mc.albums[cursor1.album_i(mc)];
 		if(album.name == cursor.album_name){
 			album_found = true;
 			cursor = cursor1;
@@ -495,15 +495,17 @@ bool force_resolve_track(const MediaContent &mc, PlayCursor &cursor)
 	const Album &album = mc.albums[cursor.album_i(mc)];
 	const Track &track = album.tracks[cursor.track_i(mc)];
 	if(track.display_name == cursor.track_name){
-		printf("Found track on album\n");
+		printf("Found as track #%i on album #%i\n",
+				cursor.track_i(mc)+1, cursor.album_i(mc)+1);
 		return true;
 	}
 	bool found = resolve_track_from_current_album(mc, cursor);
 	if(found){
-		printf("Found track on album\n");
+		printf("Found as track #%i on album #%i\n",
+				cursor.track_i(mc)+1, cursor.album_i(mc)+1);
 		return true;
 	}
-	printf("Didn't find track on album\n");
+	printf("Didn't find track on current album; searching everywhere\n");
 	return resolve_track_from_any_album(mc, cursor);
 }
 
@@ -961,7 +963,7 @@ void handle_control_search(const ss_ &searchstring)
 void handle_control_random_album()
 {
 	int album_seq_i = rand() % current_media_content.albums.size();
-	printf("Picking random album %i\n", album_seq_i);
+	printf("Picking random album #%i\n", album_seq_i+1);
 	current_cursor.album_seq_i = album_seq_i;
 	current_cursor.track_seq_i = 0;
 	start_at_relative_track(0, 0, true);
@@ -984,8 +986,8 @@ void handle_control_random_album_approx_num_tracks(size_t approx_num_tracks)
 	}
 	int album_seq_i = suitable_albums[rand() % suitable_albums.size()];
 	auto &album = mc.albums[album_seq_i];
-	printf("Picking random album %i (%zu tracks) from %zu suitable albums\n",
-			album_seq_i, album.tracks.size(), suitable_albums.size());
+	printf("Picking random album #%i (%zu tracks) from %zu suitable albums\n",
+			album_seq_i+1, album.tracks.size(), suitable_albums.size());
 	current_cursor.album_seq_i = album_seq_i;
 	current_cursor.track_seq_i = 0;
 	start_at_relative_track(0, 0, true);
@@ -1006,8 +1008,8 @@ void handle_control_random_album_min_num_tracks(size_t min_num_tracks)
 	}
 	int album_seq_i = suitable_albums[rand() % suitable_albums.size()];
 	auto &album = mc.albums[album_seq_i];
-	printf("Picking random album %i (%zu tracks) from %zu suitable albums\n",
-			album_seq_i, album.tracks.size(), suitable_albums.size());
+	printf("Picking random album #%i (%zu tracks) from %zu suitable albums\n",
+			album_seq_i+1, album.tracks.size(), suitable_albums.size());
 	current_cursor.album_seq_i = album_seq_i;
 	current_cursor.track_seq_i = 0;
 	start_at_relative_track(0, 0, true);
@@ -1028,8 +1030,8 @@ void handle_control_random_album_max_num_tracks(size_t max_num_tracks)
 	}
 	int album_seq_i = suitable_albums[rand() % suitable_albums.size()];
 	auto &album = mc.albums[album_seq_i];
-	printf("Picking random album %i (%zu tracks) from %zu suitable albums\n",
-			album_seq_i, album.tracks.size(), suitable_albums.size());
+	printf("Picking random album #%i (%zu tracks) from %zu suitable albums\n",
+			album_seq_i+1, album.tracks.size(), suitable_albums.size());
 	current_cursor.album_seq_i = album_seq_i;
 	current_cursor.track_seq_i = 0;
 	start_at_relative_track(0, 0, true);
@@ -1043,7 +1045,7 @@ void handle_control_random_track()
 		return;
 	auto &album = mc.albums[cursor.album_i(mc)];
 	int track_seq_i = rand() % album.tracks.size();
-	printf("Picking random track %i\n", track_seq_i);
+	printf("Picking random track #%i\n", track_seq_i+1);
 	current_cursor.track_seq_i = track_seq_i;
 	start_at_relative_track(0, 0, false);
 }
