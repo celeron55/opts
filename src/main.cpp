@@ -1643,6 +1643,7 @@ void scan_current_mount()
 		if(LOG_DEBUG)
 			printf("Starting without saved state; picking random album\n");
 		handle_control_random_album();
+		return;
 	}
 
 	if(!static_media_paths.empty() && current_media_content.albums.empty()){
@@ -1654,10 +1655,10 @@ void scan_current_mount()
 	if(!force_resolve_track(current_media_content, current_cursor)){
 		printf("Force-resolve track failed; picking random album\n");
 		handle_control_random_album();
+		return;
 	}
 
 	temp_display_album();
-
 	force_start_at_cursor();
 }
 
@@ -2164,6 +2165,11 @@ int main(int argc, char *argv[])
     mpv_set_option_string(mpv, "vo", "null");
 
     check_mpv_error(mpv_initialize(mpv));
+
+	// Wait idle event so that we don't do things twice at startup
+	arduino_set_text("WAIT IDLE");
+	wait_mpv_event(MPV_EVENT_IDLE, 5000);
+	arduino_set_text("OK");
 
 	if(LOG_DEBUG)
 		printf("Doing initial partition scan\n");
