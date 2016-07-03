@@ -66,55 +66,7 @@ up_<FileWatch> partitions_watch;
 ss_ current_mount_device;
 ss_ current_mount_path;
 
-//set_<ss_> disappeared_tracks;
 bool queued_pause = false;
-
-enum TrackFindStrategyStep {
-	TFSS_LOADFILE,
-	TFSS_SCAN_CURRENT_MOUNT,
-	TFSS_CHECK_CHANGED_PARTITIONS,
-	TFSS_RESET_CURSOR_TO_BEGINNING,
-	TFSS_WAIT_2S,
-	TFSS_WAIT_4S,
-
-	TFSS_FORGET_IT,
-
-	TFSS_COUNT,
-};
-// Track is switched only after this strategy is executed
-const TrackFindStrategyStep TRACK_FIND_STRATEGY[] = {
-	TFSS_WAIT_2S,
-	TFSS_LOADFILE,
-	TFSS_WAIT_2S,
-	TFSS_SCAN_CURRENT_MOUNT,
-	TFSS_LOADFILE,
-	TFSS_CHECK_CHANGED_PARTITIONS,
-	TFSS_WAIT_2S,
-	TFSS_SCAN_CURRENT_MOUNT,
-	TFSS_LOADFILE,
-	TFSS_CHECK_CHANGED_PARTITIONS,
-	TFSS_WAIT_4S,
-	TFSS_SCAN_CURRENT_MOUNT,
-	TFSS_LOADFILE,
-	TFSS_CHECK_CHANGED_PARTITIONS,
-	TFSS_WAIT_4S,
-	TFSS_SCAN_CURRENT_MOUNT,
-	TFSS_LOADFILE,
-	TFSS_CHECK_CHANGED_PARTITIONS,
-	TFSS_WAIT_4S,
-	TFSS_SCAN_CURRENT_MOUNT,
-	TFSS_LOADFILE,
-	TFSS_CHECK_CHANGED_PARTITIONS,
-	TFSS_RESET_CURSOR_TO_BEGINNING,
-	TFSS_SCAN_CURRENT_MOUNT,
-	TFSS_LOADFILE,
-	TFSS_CHECK_CHANGED_PARTITIONS,
-	TFSS_FORGET_IT,
-};
-size_t track_find_strategy_next_i = 0;
-time_t track_find_strategy_wait_time = 0;
-time_t track_find_strategy_wait_timestamp = 0;
-ss_ track_find_strategy_current_track_name;
 
 struct Track
 {
@@ -189,13 +141,6 @@ void on_loadfile(double start_pos, const ss_ &track_name)
 		current_cursor.track_name = track_name;
 	}
 
-	// If track changed, reset track find strategy
-	if(track_name != track_find_strategy_current_track_name){
-		track_find_strategy_current_track_name = track_name;
-		track_find_strategy_next_i = 0;
-		track_find_strategy_wait_time = 0;
-	}
-
 	arduino_serial_write(">PROGRESS:0\r\n");
 }
 
@@ -227,90 +172,6 @@ ss_ mpv_get_string_property(mpv_handle *mpv, const char *name)
 	ss_ s = cs != NULL ? ss_(cs) : ss_();
 	mpv_free(cs);
 	return s;
-}
-
-bool is_track_playing_fine()
-{
-	static time_t last_playing_fine_timestamp = 0;
-
-	bool was_playing_fine_during_the_past_three_seconds = (
-			last_playing_fine_timestamp > time(0) - 3);
-
-	if(mpv_last_loadfile_timestamp > time(0) - 3){
-		// We can't determine anything during the first few seconds. Probably
-		// fine.
-		last_playing_fine_timestamp = time(0);
-		return true;
-	}
-
-	if(!track_was_loaded){
-		if(was_playing_fine_during_the_past_three_seconds)
-			return true;
-		// Not loaded is not fine.
-		return false;
-	}
-
-	// Let's say the track is playing fine if mpv returns a currently playing
-	// file and that file exists on the filesystem, unless this is track repeat,
-	// in which case don't care about the filesystem as the filesystem isn't
-	// really needed in that case.
-
-	Track track = get_track(current_media_content, current_cursor);
-
-	ss_ path_property = mpv_get_string_property(mpv, "path");
-
-	if(path_property == ""){
-		if(was_playing_fine_during_the_past_three_seconds)
-			return true;
-		printf("Track is not playing fine because the path property is empty\n");
-		return false;
-	}
-
-	if(track_progress_mode != TPM_ALBUM_REPEAT_TRACK){
-		if(access(track.path.c_str(), F_OK) == -1){
-			printf("Track is not playing fine because the file %s does not "
-					"exist (track.path).\n", cs(track.path));
-			return false;
-		}
-		if(access(path_property.c_str(), F_OK) == -1){
-			printf("Track is not playing fine because the file %s does not "
-					"exist (path_property).\n", cs(path_property));
-			return false;
-		}
-	}
-
-	last_playing_fine_timestamp = time(0);
-	return true;
-}
-
-bool is_track_at_natural_end()
-{
-	if(track_progress_mode == TPM_ALBUM_REPEAT_TRACK){
-		return false;
-	}
-
-	if(!track_was_loaded){
-		if(LOG_DEBUG)
-			printf("is_track_at_natural_end(): !track_was_loaded -> false\n");
-		return false;
-	}
-
-	if(current_track_stream_end == 0){
-		if(LOG_DEBUG)
-			printf("is_track_at_natural_end(): current_track_stream_end == 0 -> false\n");
-		return false;
-	}
-
-	int64_t stream_pos = current_cursor.stream_pos;
-
-	bool is = (stream_pos >= current_track_stream_end * 0.9 - 5);
-
-	if(LOG_DEBUG){
-		printf("is_track_at_natural_end(): stream_pos=%" PRId64
-				", current_track_stream_end=%" PRId64 " -> %s\n",
-				stream_pos, current_track_stream_end, is?"true":"false");
-	}
-	return is;
 }
 
 time_t last_save_timestamp = 0;
@@ -523,66 +384,6 @@ bool force_resolve_track(const MediaContent &mc, PlayCursor &cursor)
 	return true;
 }
 
-void execute_track_find_strategy()
-{
-	// Let's hope the TFS system gets rid of a possible idle state
-	mpv_last_not_idle_timestamp = time(0);
-
-	if(track_find_strategy_wait_time > 0){
-		if(track_find_strategy_wait_timestamp >= time(0) - track_find_strategy_wait_time)
-			return;
-		track_find_strategy_wait_time = 0;
-	}
-	TrackFindStrategyStep next_step = TRACK_FIND_STRATEGY[track_find_strategy_next_i++];
-	switch(next_step){
-	case TFSS_LOADFILE: {
-		printf("TFS: Trying force resolve track\n");
-		bool found = force_resolve_track(current_media_content, current_cursor);
-		if(found){
-			printf("TFS: -> Found; Trying force start at cursor\n");
-			void force_start_at_cursor();
-			force_start_at_cursor();
-		} else {
-			printf("TFS: -> Not found\n");
-		}
-		break; }
-	case TFSS_SCAN_CURRENT_MOUNT: {
-		printf("TFS: Scanning current mount\n");
-		void scan_current_mount();
-		scan_current_mount();
-		break; }
-	case TFSS_CHECK_CHANGED_PARTITIONS: {
-		printf("TFS: Checking changed partitions\n");
-		void handle_changed_partitions();
-		handle_changed_partitions();
-		break; }
-	case TFSS_RESET_CURSOR_TO_BEGINNING: {
-		printf("TFS: Resetting cursor to beginning\n");
-		current_cursor.time_pos = 0;
-		current_cursor.stream_pos = 0;
-		break; }
-	case TFSS_WAIT_2S: {
-		printf("TFS: Waiting 2s\n");
-		track_find_strategy_wait_time = 2;
-		track_find_strategy_wait_timestamp = time(0);
-		break; }
-	case TFSS_WAIT_4S: {
-		printf("TFS: Waiting 4s\n");
-		track_find_strategy_wait_time = 4;
-		track_find_strategy_wait_timestamp = time(0);
-		break; }
-	case TFSS_FORGET_IT: {
-		printf("TFS: Giving up.\n");
-		track_find_strategy_next_i = 0;
-		void automated_start_play_next_track();
-		automated_start_play_next_track();
-		break; }
-	case TFSS_COUNT: {
-		abort();
-		break; }
-	}
-}
-
 size_t get_total_tracks(const MediaContent &mc)
 {
 	size_t total = 0;
@@ -728,6 +529,9 @@ void load_and_play_current_track_from_start()
 	check_mpv_error(mpv_command(mpv, cmd));
 
 	on_loadfile(0, track.display_name);
+
+	void update_display();
+	update_display();
 }
 
 void refresh_track()
@@ -1337,6 +1141,16 @@ void handle_key_press(int key)
 void handle_key_release(int key)
 {
 	current_keys.erase(key);
+
+	if(stateful_input_mode == SIM_NONE){
+		if(key == 21 || key == 16 || key == 10 || key == 15 || key == 20 || key == 25){
+			if(!current_keys.count(21) && !current_keys.count(16) &&
+					!current_keys.count(10) && !current_keys.count(15) &&
+					!current_keys.count(20) && !current_keys.count(25)){
+				temp_display_album();
+			}
+		}
+	}
 }
 
 void try_open_arduino_serial()
@@ -1541,8 +1355,6 @@ void automated_start_play_next_track()
 {
 	printf("Automated start of next track\n");
 
-	track_find_strategy_next_i = 0;
-
 	switch(track_progress_mode){
 	case TPM_SEQUENTIAL:
 		current_cursor.track_i++;
@@ -1587,19 +1399,41 @@ void automated_start_play_next_track()
 
 void do_something_instead_of_idle()
 {
-	if(!static_media_paths.empty() && current_media_content.albums.empty()){
-		// There are static media paths and there are no tracks; do nothing
+	if(current_media_content.albums.empty()){
+		// There are no tracks; do nothing
 		return;
 	}
 
 	if(LOG_DEBUG)
 		printf("Trying to do something instead of idle\n");
 
-	if(is_track_at_natural_end()){
+	// If the currently playing file does not exist, and the current device does
+	// not exist, stop playback and wait until the media is available again
+
+	Track track = get_track(current_media_content, current_cursor);
+	if(track.path == ""){
+		// Weren't trying to play anything
 		automated_start_play_next_track();
-	} else {
-		execute_track_find_strategy();
+		return;
 	}
+
+	if(access(track.path.c_str(), F_OK) == 0){
+		// File exists; go to next file
+		automated_start_play_next_track();
+		return;
+	}
+
+	void handle_changed_partitions();
+	handle_changed_partitions();
+
+	if(!current_media_content.albums.empty()){
+		// The file disappeared but media is still available; go to next file
+		automated_start_play_next_track();
+		return;
+	}
+
+	// Media got unmounted; do nothing and wait until media is available again
+	printf("Media got unmounted and there are no tracks available\n");
 }
 
 void handle_mpv()
@@ -1730,7 +1564,13 @@ void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_al
 	DirLister dl(path.c_str());
 
 	Album root_album;
-	root_album.name = root_name;
+	if(root_name.size() <= 7 && parent_dir_album){
+		root_album.name = root_name+" | "+parent_dir_album->name;
+	} else {
+		root_album.name = root_name;
+	}
+
+	sv_<ss_> subdirs;
 
 	for(;;){
 		int ftype;
@@ -1749,8 +1589,16 @@ void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_al
 			root_album.tracks.push_back(Track(path+"/"+fname, stripped));
 		} else if(ftype == FS_DIR){
 			//printf("Dir: %s\n", cs(path+"/"+fname));
-			scan_directory(fname, path+"/"+fname, result_albums, &root_album);
+			subdirs.push_back(fname);
 		}
+	}
+
+	// Sort subdirs
+	std::sort(subdirs.begin(), subdirs.end());
+
+	// Scan subdirs
+	for(const ss_ &fname : subdirs){
+		scan_directory(fname, path+"/"+fname, result_albums, &root_album);
 	}
 
 	// Sort by path
@@ -1804,8 +1652,8 @@ void scan_current_mount()
 	}
 
 	if(!force_resolve_track(current_media_content, current_cursor)){
-		printf("Force-resolve track failed\n");
-		execute_track_find_strategy();
+		printf("Force-resolve track failed; picking random album\n");
+		handle_control_random_album();
 	}
 
 	temp_display_album();
@@ -2084,22 +1932,6 @@ void handle_periodic_save()
 	save_stuff();
 }
 
-void handle_track_find_strategy()
-{
-	static time_t timestamp = 0;
-	if(timestamp == time(0))
-		return;
-	timestamp = time(0);
-	if(!is_track_playing_fine()){
-		if(!static_media_paths.empty() && current_media_content.albums.empty()){
-			// If there are static media paths and there are no tracks, just don't care
-		} else {
-			printf("Track isn't playing fine; executing track find strategy\n");
-			execute_track_find_strategy();
-		}
-	}
-}
-
 void sigint_handler(int _)
 {
 	printf("SIGINT\n");
@@ -2351,8 +2183,6 @@ int main(int argc, char *argv[])
 		handle_mount();
 
 		handle_periodic_save();
-
-		handle_track_find_strategy();
 
 		usleep(1000000/60);
 	}

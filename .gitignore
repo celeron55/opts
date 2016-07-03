@@ -5,3 +5,4 @@ session.vim
 /opts
 /saved_state*
 /avrdude.log*
+/todo.txt
