@@ -1,0 +1,11 @@
+[Unit]
+Description=Autosoitin chvt
+After=autosoitin.service tty1.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/chvt 11
+
+[Install]
+#WantedBy=local-fs.target
+WantedBy=multi-user.target

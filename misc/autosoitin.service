@@ -1,5 +1,3 @@
-# /etc/systemd/system/autosoitin.service
-
 [Unit]
 Description=Autosoitin
 DefaultDependencies=false
@@ -11,7 +9,9 @@ Restart=always
 RestartSec=3
 #StandardOutput=journal
 #StandardError=journal
+StandardInput=tty
+TTYPath=/dev/tty11
 
 [Install]
-WantedBy=local-fs.target
-
+#WantedBy=local-fs.target
+WantedBy=multi-user.target
