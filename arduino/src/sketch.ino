@@ -476,6 +476,8 @@ uint8_t map_volume(uint8_t volume)
 
 void send_volume_update()
 {
+	uint8_t input_gain = 5; // 0...15 (0dB...+18.75dB)
+
 	const VolumeControls &vc = g_volume_controls;
 	uint8_t data[] = {
 		0x00 | ((vc.fader & 0x0f) << 0) | ((vc.super_bass & 0x0f) << 4),
@@ -483,7 +485,7 @@ void send_volume_update()
 		0x00 | ((map_basstreble(vc.bass) & 0x0f) << 0) |
 				((map_basstreble(vc.treble) & 0x0f) << 4),
 		map_volume(vc.volume), // Only weirdly selected values are allowed
-		0x00 | ((vc.input_switch & 0x03) << 4) | ((vc.output_gain & 0x01) << 6),
+		0x00 | (input_gain & 0x0f) | ((vc.input_switch & 0x03) << 4) | ((vc.output_gain & 0x01) << 6),
 		0x00 | ((vc.input_switch & 0x04) >> 2) | ((vc.channel_sel & 0x03) << 1) | ((vc.mute_switch & 0x01) << 3) | ((vc.output_gain & 0x02) << 6),
 		0x00, // 4 test mode bits and 4 dummy bits
 	};
