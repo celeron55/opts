@@ -230,6 +230,8 @@ StatefulInputMode stateful_input_mode = SIM_NONE;
 time_t stateful_input_mode_active_timestamp = 0;
 CommandAccumulator<10> stateful_input_accu;
 
+ss_ last_searchstring;
+
 ss_ mpv_get_string_property(mpv_handle *mpv, const char *name)
 {
 	char *cs = NULL;
@@ -1075,7 +1077,7 @@ void handle_stdin()
 				printf("  playmodeget, mg\n");
 				printf("  pos\n");
 				printf("  save\n");
-				printf("  /<string> (search)\n");
+				printf("  /<string> (search) (alias: 1)\n");
 				printf("  album <n>\n");
 				printf("  track <n>\n");
 				printf("  randomalbum, ra, r <approx. #tracks (optional)>\n");
@@ -1115,9 +1117,14 @@ void handle_stdin()
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "save"){
 				save_stuff();
-			} else if(command.size() >= 2 && command.substr(0, 1) == "/"){
+			} else if(command.size() >= 2 && (command.substr(0, 1) == "/" ||
+					command.substr(0, 1) == "1")){
 				ss_ searchstring = command.substr(1);
 				handle_control_search(searchstring);
+				last_searchstring = searchstring;
+			} else if(command == "/" || command == "1"){
+				if(last_searchstring != "")
+					handle_control_search(last_searchstring);
 			} else if(w1n == "album"){
 				int album_n = stoi(fn.next(""), -1);
 				handle_control_album_number(album_n);
