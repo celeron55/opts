@@ -476,7 +476,7 @@ uint8_t map_volume(uint8_t volume)
 
 void send_volume_update()
 {
-	uint8_t input_gain = 10; // 0...15 (0dB...+18.75dB)
+	uint8_t input_gain = 15; // 0...15 (0dB...+18.75dB)
 
 	const VolumeControls &vc = g_volume_controls;
 	uint8_t data[] = {
