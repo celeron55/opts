@@ -31,6 +31,8 @@ uint16_t g_config_menu_show_timer = 0; // milliseconds; counts down
 enum ConfigOption {
 	CO_BASS,
 	CO_TREBLE,
+	CO_LCD_BACKLIGHT,
+	CO_BUTTON_BACKLIGHT,
 	CO_BENIS,
 	CO_PI_CYCLE,
 	CO_LCD_AND_BUTTONS_TEST,
@@ -60,20 +62,31 @@ bool g_raspberry_power_on = false;
 uint8_t g_raspberry_power_off_warning_delay = 0; // seconds; counts down
 uint8_t g_raspberry_real_power_off_delay = 0; // seconds; counts down
 
+// Display lighting control via general outputs of the LCD controller
+uint8_t g_lcd_byte0 = 0x00; // 0x01=blue, 0x10=red
+uint8_t g_lcd_byte1 = 0x00; // 0x01=high brightness
+
 bool g_lcd_do_sleep = false;
 uint8_t g_display_data[] = {
-	0x11, 0x00, 0x00, 0x00, 0x00, 0x00,
+	g_lcd_byte0, g_lcd_byte1, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00,
 };
 uint8_t g_temp_display_data[] = {
-	0x11, 0x00, 0x00, 0x00, 0x00, 0x00,
+	g_lcd_byte0, g_lcd_byte1, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00,
 };
 uint16_t g_temp_display_data_timer = 0; // milliseconds; counts down
+
+static void reset_display_data(uint8_t *display_data)
+{
+	memset(display_data + 2, 0, sizeof g_display_data /* yes */ - 2);
+	display_data[0] = g_lcd_byte0;
+	display_data[1] = g_lcd_byte1;
+}
 
 struct VolumeControls {
 	uint8_t fader = 15; // 0...15 (-infdB...0dB)
@@ -138,7 +151,7 @@ uint8_t g_raspberry_display_extra_segments = 0;
 
 void power_off_update()
 {
-	memset(g_display_data + 1, 0, sizeof g_display_data - 1);
+	reset_display_data(g_display_data);
 	set_segments(g_display_data, 0, "POWER OFF");
 }
 
@@ -165,7 +178,7 @@ void power_off_handle_keys()
 
 void aux_update()
 {
-	memset(g_display_data + 1, 0, sizeof g_display_data - 1);
+	reset_display_data(g_display_data);
 	g_display_data[163 / 8] |= 1 << (163 % 8); // AUX icon
 	char buf[10] = {0};
 	snprintf(buf, 10, "AUX %i    ", g_volume_controls.volume);
@@ -219,7 +232,7 @@ void raspberry_update()
 {
 	// Update LCD
 	{
-		memset(g_display_data + 1, 0, sizeof g_display_data - 1);
+		reset_display_data(g_display_data);
 
 		set_all_segments(g_display_data, g_raspberry_display_text);
 
@@ -503,7 +516,7 @@ void handle_encoder_value(int8_t rot)
 		send_volume_update();
 		g_saveables_dirty = true;
 
-		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		reset_display_data(g_temp_display_data);
 		char buf[10] = {0};
 		snprintf(buf, 10, "VOL %i    ", g_volume_controls.volume);
 		set_all_segments(g_temp_display_data, buf);
@@ -522,7 +535,7 @@ void handle_encoder_value(int8_t rot)
 			a = 0;
 			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
 		}
-		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		reset_display_data(g_temp_display_data);
 		char buf[10] = {0};
 		snprintf(buf, 10, "BASS %i    ", g_volume_controls.bass);
 		set_all_segments(g_temp_display_data, buf);
@@ -541,24 +554,62 @@ void handle_encoder_value(int8_t rot)
 			a = 0;
 			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
 		}
-		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		reset_display_data(g_temp_display_data);
 		char buf[10] = {0};
 		snprintf(buf, 10, "TREB %i    ", g_volume_controls.treble);
+		set_all_segments(g_temp_display_data, buf);
+		g_temp_display_data_timer = 1;
+	} else if(g_config_option == CO_LCD_BACKLIGHT){
+		static int8_t a = 0;
+		a += rot;
+		if(a < -3){
+			a = 0;
+			g_lcd_byte1 &= ~0x01;
+			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+			g_saveables_dirty = true;
+		} else if(a > 3){
+			a = 0;
+			g_lcd_byte1 |= 0x01;
+			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+			g_saveables_dirty = true;
+		}
+		reset_display_data(g_temp_display_data);
+		char buf[10] = {0};
+		snprintf(buf, 10, "BACKLI %i", g_lcd_byte1 & 0x01 ? 1 : 0);
+		set_all_segments(g_temp_display_data, buf);
+		g_temp_display_data_timer = 1;
+	} else if(g_config_option == CO_BUTTON_BACKLIGHT){
+		static int8_t a = 0;
+		a += rot;
+		if(a < -3){
+			a = 0;
+			g_lcd_byte0 &= ~0x11;
+			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+			g_saveables_dirty = true;
+		} else if(a > 3){
+			a = 0;
+			g_lcd_byte0 |= 0x11;
+			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+			g_saveables_dirty = true;
+		}
+		reset_display_data(g_temp_display_data);
+		char buf[10] = {0};
+		snprintf(buf, 10, "BUTTLI %i", g_lcd_byte0 & 0x11 ? 1 : 0);
 		set_all_segments(g_temp_display_data, buf);
 		g_temp_display_data_timer = 1;
 	} else if(g_config_option == CO_BENIS){
 		static int8_t a = 0;
 		a += rot;
-		if(a < -4){
+		if(a < -3){
 			a = 0;
 			g_benis_mode_enabled = false;
 			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
-		} else if(a > 4){
+		} else if(a > 3){
 			a = 0;
 			g_benis_mode_enabled = true;
 			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
 		}
-		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		reset_display_data(g_temp_display_data);
 		char buf[10] = {0};
 		snprintf(buf, 10, "BENIS %i", g_benis_mode_enabled);
 		set_all_segments(g_temp_display_data, buf);
@@ -583,7 +634,7 @@ void handle_encoder_value(int8_t rot)
 			snprintf(g_raspberry_display_text, sizeof g_raspberry_display_text,
 					"RASPBERR");
 		}
-		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		reset_display_data(g_temp_display_data);
 		char buf[10] = {0};
 		if(a < 10){
 			snprintf(buf, 10, "PI CYCLE");
@@ -596,8 +647,7 @@ void handle_encoder_value(int8_t rot)
 		g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
 		static uint8_t lcd_i = 13;
 		lcd_i += rot;
-		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
-		g_temp_display_data[0] = 0x11;
+		reset_display_data(g_temp_display_data);
 		bool key_shown = false;
 		for(uint8_t i=0; i<30; i++){
 			if(lcd_is_key_pressed(g_current_keys, i)){
@@ -707,7 +757,7 @@ void handle_serial()
 		if(strncmp(command, ">SET_TEMP_TEXT:", 15) == 0){
 			if(g_control_mode == CM_RASPBERRY){
 				const char *text = &command[15];
-				memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+				reset_display_data(g_temp_display_data);
 				char buf[10] = {0};
 				snprintf(buf, 10, "%s", text);
 				set_all_segments(g_temp_display_data, buf);
@@ -782,7 +832,7 @@ void handle_keys()
 void display_special_stuff()
 {
 	if(!g_amplifier_power_on && g_amplifier_real_power_off_delay > 0){
-		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		reset_display_data(g_temp_display_data);
 		set_all_segments(g_temp_display_data, "--------");
 		g_temp_display_data_timer = 1;
 		return;
@@ -792,7 +842,7 @@ void display_special_stuff()
 		return;
 	}
 	if(g_benis_mode_enabled && g_temp_display_data_timer == 0){
-		memset(g_temp_display_data + 1, 0, sizeof g_temp_display_data - 1);
+		reset_display_data(g_temp_display_data);
 		set_all_segments(g_temp_display_data, " BENIS ");
 		g_temp_display_data_timer = 1;
 		return;
@@ -814,6 +864,8 @@ void save_everything()
 	eeprom_write_byte(wa++, g_volume_controls.volume);
 	eeprom_write_byte(wa++, g_volume_controls.bass);
 	eeprom_write_byte(wa++, g_volume_controls.treble);
+	eeprom_write_byte(wa++, g_lcd_byte0);
+	eeprom_write_byte(wa++, g_lcd_byte1);
 }
 
 void load_everything()
@@ -835,6 +887,8 @@ void load_everything()
 	g_volume_controls.volume = eeprom_read_byte(ra++);
 	g_volume_controls.bass = eeprom_read_byte(ra++);
 	g_volume_controls.treble = eeprom_read_byte(ra++);
+	g_lcd_byte0 = eeprom_read_byte(ra++) & 0x11;
+	g_lcd_byte1 = eeprom_read_byte(ra++) & 0x01;
 }
 
 void save_everything_with_rate_limit(uint32_t rate_limit_ms)
@@ -891,6 +945,9 @@ void setup()
 	init_io();
 
 	load_everything();
+
+	reset_display_data(g_display_data);
+	reset_display_data(g_temp_display_data);
 
 	if(g_control_mode != CM_POWER_OFF){
 		power_on();
@@ -993,9 +1050,9 @@ void loop()
 	display_special_stuff();
 
 	if(g_temp_display_data_timer > 0){
-		lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
+		lcd_send_display(0x14 | (false ? 0x03 : 0), g_temp_display_data);
 	} else {
-		lcd_send_display(0x24 | (g_lcd_do_sleep ? 0x07 : 0), g_display_data);
+		lcd_send_display(0x14 | (g_lcd_do_sleep ? 0x03 : 0), g_display_data);
 	}
 
 	if(g_saveables_dirty){
