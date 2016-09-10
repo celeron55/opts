@@ -153,7 +153,7 @@ public:
 	void set_track_progress_mode(const MediaContent &mc, TrackProgressMode new_tpm){
 		if(new_tpm == track_progress_mode)
 			return;
-		if(new_tpm == TPM_SHUFFLE_ALL){
+		if(new_tpm == TPM_SHUFFLE_ALL && !mc.albums.empty()){
 			// Resolve into shuffled indexing
 			const Album &album = mc.albums[album_seq_i];
 			if(album.shuffled_track_order.size() != album.tracks.size())
