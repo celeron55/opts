@@ -967,6 +967,9 @@ void loop()
 		}
 		else if(!digitalRead(PIN_IGNITION_INPUT) && g_amplifier_power_on){
 			power_off();
+
+			Serial.print(F("<MODE:"));
+			Serial.println(CONTROL_MODES[CM_POWER_OFF].name);
 		}
 	}
 
