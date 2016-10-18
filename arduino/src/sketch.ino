@@ -93,7 +93,8 @@ struct VolumeControls {
 	uint8_t super_bass = 0; // 0...10
 	int8_t bass = 0; // -7...7
 	int8_t treble = 0; // -7...7
-	uint8_t volume = 45;
+	uint8_t volume_rpi = 45;
+	uint8_t volume_aux = 45;
 	// NOTE: in2=5=CD, in5=0=AUX
 	uint8_t input_switch = 5; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
 	uint8_t mute_switch = 0; // 0, 1
@@ -162,6 +163,7 @@ void power_off_handle_keys()
 		power_on();
 		g_control_mode = CM_AUX;
 		g_saveables_dirty = true;
+		send_volume_update();
 
 		if(!digitalRead(PIN_IGNITION_INPUT)){
 			g_manual_power_state = true;
@@ -181,7 +183,7 @@ void aux_update()
 	reset_display_data(g_display_data);
 	g_display_data[163 / 8] |= 1 << (163 % 8); // AUX icon
 	char buf[10] = {0};
-	snprintf(buf, 10, "AUX %i    ", g_volume_controls.volume);
+	snprintf(buf, 10, "AUX %i    ", g_volume_controls.volume_aux);
 	set_segments(g_display_data, 0, buf);
 
 	if(g_volume_controls.input_switch != 0){
@@ -197,6 +199,7 @@ void aux_handle_keys()
 		power_on();
 		g_control_mode = CM_RASPBERRY;
 		g_saveables_dirty = true;
+		send_volume_update();
 
 		Serial.print(F("<MODE:"));
 		Serial.println(CONTROL_MODES[g_control_mode].name);
@@ -252,6 +255,7 @@ void raspberry_handle_keys()
 		g_control_mode = CM_POWER_OFF;
 		g_saveables_dirty = true;
 		power_off();
+		send_volume_update();
 
 		if(digitalRead(PIN_IGNITION_INPUT)){
 			g_manual_power_state = true;
@@ -492,12 +496,15 @@ void send_volume_update()
 	uint8_t input_gain = 15; // 0...15 (0dB...+18.75dB)
 
 	const VolumeControls &vc = g_volume_controls;
+
+	uint8_t volume = g_control_mode == CM_AUX ? vc.volume_aux : vc.volume_rpi;
+
 	uint8_t data[] = {
 		0x00 | ((vc.fader & 0x0f) << 0) | ((vc.super_bass & 0x0f) << 4),
 		// 0=neutral, 1...7=boost, 9...15=cut
 		0x00 | ((map_basstreble(vc.bass) & 0x0f) << 0) |
 				((map_basstreble(vc.treble) & 0x0f) << 4),
-		map_volume(vc.volume), // Only weirdly selected values are allowed
+		map_volume(volume), // Only weirdly selected values are allowed
 		0x00 | (input_gain & 0x0f) | ((vc.input_switch & 0x03) << 4) | ((vc.output_gain & 0x01) << 6),
 		0x00 | ((vc.input_switch & 0x04) >> 2) | ((vc.channel_sel & 0x03) << 1) | ((vc.mute_switch & 0x01) << 3) | ((vc.output_gain & 0x02) << 6),
 		0x00, // 4 test mode bits and 4 dummy bits
@@ -508,17 +515,26 @@ void send_volume_update()
 void handle_encoder_value(int8_t rot)
 {
 	if(g_config_menu_show_timer == 0){
-		g_volume_controls.volume += rot;
-		if(g_volume_controls.volume > 250)
-			g_volume_controls.volume = 0;
-		else if(g_volume_controls.volume > 80)
-			g_volume_controls.volume = 80;
+		if(g_control_mode == CM_AUX){
+			g_volume_controls.volume_aux += rot;
+			if(g_volume_controls.volume_aux > 250)
+				g_volume_controls.volume_aux = 0;
+			else if(g_volume_controls.volume_aux > 80)
+				g_volume_controls.volume_aux = 80;
+		} else {
+			g_volume_controls.volume_rpi += rot;
+			if(g_volume_controls.volume_rpi > 250)
+				g_volume_controls.volume_rpi = 0;
+			else if(g_volume_controls.volume_rpi > 80)
+				g_volume_controls.volume_rpi = 80;
+		}
 		send_volume_update();
 		g_saveables_dirty = true;
 
 		reset_display_data(g_temp_display_data);
 		char buf[10] = {0};
-		snprintf(buf, 10, "VOL %i    ", g_volume_controls.volume);
+		snprintf(buf, 10, "VOL %i    ", g_control_mode == CM_AUX ?
+				g_volume_controls.volume_aux : g_volume_controls.volume_rpi);
 		set_all_segments(g_temp_display_data, buf);
 		g_temp_display_data_timer = 1000;
 	} else if(g_config_option == CO_BASS){
@@ -861,11 +877,12 @@ void save_everything()
 	eeprom_write_byte(wa++, 1);
 	// Parameters
 	eeprom_write_byte(wa++, g_control_mode);
-	eeprom_write_byte(wa++, g_volume_controls.volume);
+	eeprom_write_byte(wa++, g_volume_controls.volume_rpi);
 	eeprom_write_byte(wa++, g_volume_controls.bass);
 	eeprom_write_byte(wa++, g_volume_controls.treble);
 	eeprom_write_byte(wa++, g_lcd_byte0);
 	eeprom_write_byte(wa++, g_lcd_byte1);
+	eeprom_write_byte(wa++, g_volume_controls.volume_aux);
 }
 
 void load_everything()
@@ -884,11 +901,12 @@ void load_everything()
 	uint8_t version = eeprom_read_byte(ra++);
 	// Parameters
 	g_control_mode = (ControlMode)eeprom_read_byte(ra++);
-	g_volume_controls.volume = eeprom_read_byte(ra++);
+	g_volume_controls.volume_rpi = eeprom_read_byte(ra++);
 	g_volume_controls.bass = eeprom_read_byte(ra++);
 	g_volume_controls.treble = eeprom_read_byte(ra++);
 	g_lcd_byte0 = eeprom_read_byte(ra++) & 0x11;
 	g_lcd_byte1 = eeprom_read_byte(ra++) & 0x01;
+	g_volume_controls.volume_aux = eeprom_read_byte(ra++);
 }
 
 void save_everything_with_rate_limit(uint32_t rate_limit_ms)
@@ -964,6 +982,9 @@ void loop()
 	if(!g_manual_power_state){
 		if(digitalRead(PIN_IGNITION_INPUT) && !g_amplifier_power_on){
 			power_on();
+
+			Serial.print(F("<MODE:"));
+			Serial.println(CONTROL_MODES[g_control_mode].name);
 		}
 		else if(!digitalRead(PIN_IGNITION_INPUT) && g_amplifier_power_on){
 			power_off();
