@@ -181,7 +181,9 @@ public:
 			// Resolve back from shuffled indexing
 			int new_album_seq_i = album_i(mc);
 			int new_track_seq_i = track_i(mc);
-			album_seq_i = new_album_seq_i;
+			if(track_progress_mode == TPM_SHUFFLE_ALL){
+				album_seq_i = new_album_seq_i;
+			}
 			track_seq_i = new_track_seq_i;
 		}
 		track_progress_mode = new_tpm;
