@@ -964,6 +964,14 @@ void handle_control_search(const ss_ &searchstring)
 
 void handle_control_random_album()
 {
+	if(current_media_content.albums.empty()){
+		printf("Picking random album when there is no media -> recovery mode: "
+				"resetting and saving play cursor\n");
+		current_cursor = PlayCursor();
+		last_succesfully_playing_cursor = PlayCursor();
+		save_stuff();
+		return;
+	}
 	int album_seq_i = rand() % current_media_content.albums.size();
 	printf("Picking random album #%i\n", album_seq_i+1);
 	current_cursor.album_seq_i = album_seq_i;
