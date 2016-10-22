@@ -77,6 +77,7 @@ enum TrackProgressMode {
 	TPM_ALBUM_REPEAT_TRACK,
 	TPM_SHUFFLE_ALL,
 	TPM_SHUFFLE_TRACKS,
+	TPM_MR_SHUFFLE,
 
 	TPM_NUM_MODES,
 };
@@ -101,12 +102,14 @@ struct Album
 	ss_ name;
 	sv_<Track> tracks;
 	mutable sv_<size_t> shuffled_track_order;
+	bool mr_shuffle_tracks = false;
 };
 
 struct MediaContent
 {
 	sv_<Album> albums;
 	mutable sv_<size_t> shuffled_album_order;
+	mutable sv_<size_t> mr_shuffled_album_order;
 };
 
 MediaContent current_media_content;
@@ -132,6 +135,8 @@ public:
 		}
 		if(track_progress_mode == TPM_SHUFFLE_ALL){
 			return mc.shuffled_album_order[album_seq_i];
+		} else if(track_progress_mode == TPM_MR_SHUFFLE){
+			return mc.mr_shuffled_album_order[album_seq_i];
 		} else {
 			return album_seq_i;
 		}
@@ -144,6 +149,12 @@ public:
 			return 0;
 		if(track_progress_mode == TPM_SHUFFLE_ALL ||
 				track_progress_mode == TPM_SHUFFLE_TRACKS){
+			if(album.shuffled_track_order.size() != album.tracks.size())
+				create_shuffled_order(album.shuffled_track_order, album.tracks.size());
+			return album.shuffled_track_order[track_seq_i];
+		} else if(track_progress_mode == TPM_MR_SHUFFLE){
+			if(!album.mr_shuffle_tracks)
+				return track_seq_i;
 			if(album.shuffled_track_order.size() != album.tracks.size())
 				create_shuffled_order(album.shuffled_track_order, album.tracks.size());
 			return album.shuffled_track_order[track_seq_i];
@@ -176,12 +187,32 @@ public:
 				}
 			}
 		}
+		if((new_tpm == TPM_MR_SHUFFLE) && !mc.albums.empty()){
+			// Resolve into shuffled indexing
+			const Album &album = mc.albums[album_seq_i];
+			if(album.shuffled_track_order.size() != album.tracks.size())
+				create_shuffled_order(album.shuffled_track_order, album.tracks.size());
+			for(int ti1=0; ti1<(int)album.tracks.size(); ti1++){
+				if((int)album.shuffled_track_order[ti1] == track_seq_i){
+					track_seq_i = ti1;
+					break;
+				}
+			}
+			for(int ai1=0; ai1<(int)mc.albums.size(); ai1++){
+				if((int)mc.mr_shuffled_album_order[ai1] == album_seq_i){
+					album_seq_i = ai1;
+					break;
+				}
+			}
+		}
 		if(track_progress_mode == TPM_SHUFFLE_ALL ||
-				track_progress_mode == TPM_SHUFFLE_TRACKS){
+				track_progress_mode == TPM_SHUFFLE_TRACKS ||
+				track_progress_mode == TPM_MR_SHUFFLE){
 			// Resolve back from shuffled indexing
 			int new_album_seq_i = album_i(mc);
 			int new_track_seq_i = track_i(mc);
-			if(track_progress_mode == TPM_SHUFFLE_ALL){
+			if(track_progress_mode == TPM_SHUFFLE_ALL ||
+					track_progress_mode == TPM_MR_SHUFFLE){
 				album_seq_i = new_album_seq_i;
 			}
 			track_seq_i = new_track_seq_i;
@@ -413,7 +444,7 @@ ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
 		return "No media";
 
 	ss_ s;
-	if(track_progress_mode == TPM_SHUFFLE_ALL){
+	if(track_progress_mode == TPM_SHUFFLE_ALL || track_progress_mode == TPM_MR_SHUFFLE){
 		s += "Album #"+itos(cursor.album_seq_i+1)+"="+itos(cursor.album_i(mc)+1)+
 				" ("+get_album_name(mc, cursor)+")"+
 				", track #"+itos(cursor.track_seq_i+1)+"="+itos(cursor.track_i(mc)+1)+
@@ -732,6 +763,10 @@ void arduino_set_extra_segments()
 	case TPM_SHUFFLE_TRACKS:
 		extra_segment_flags |= (1<<DISPLAY_FLAG_SHUFFLE) | (1<<DISPLAY_FLAG_REPEAT_ONE);
 		break;
+	case TPM_MR_SHUFFLE:
+		extra_segment_flags |= (1<<DISPLAY_FLAG_SHUFFLE) | (1<<DISPLAY_FLAG_REPEAT) |
+				(1<<DISPLAY_FLAG_REPEAT_ONE);
+		break;
 	case TPM_NUM_MODES:
 		break;
 	}
@@ -787,6 +822,7 @@ const char* tpm_to_string(TrackProgressMode m)
 			m == TPM_ALBUM_REPEAT_TRACK ? "TRACK REPEAT" :
 			m == TPM_SHUFFLE_ALL ? "ALL SHUFFLE" :
 			m == TPM_SHUFFLE_TRACKS ? "TRACK SHUFFLE" :
+			m == TPM_MR_SHUFFLE ? "MR. SHUFFLE" :
 			"UNKNOWN";
 }
 
@@ -1524,6 +1560,7 @@ void automated_start_play_next_track()
 	case TPM_ALBUM_REPEAT:
 	case TPM_SHUFFLE_ALL:
 	case TPM_SHUFFLE_TRACKS:
+	case TPM_MR_SHUFFLE:
 		current_cursor.track_seq_i++;
 		current_cursor.time_pos = 0;
 		current_cursor.stream_pos = 0;
@@ -1766,6 +1803,60 @@ void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_al
 	}
 }
 
+static ss_ get_filename_from_path(const ss_ &path)
+{
+	size_t i = path.size();
+	for(;;){
+		if(i == 0)
+			break;
+		if(path[i-1] == '/')
+			break;
+		i--;
+	}
+	return path.substr(i);
+}
+
+static int detect_track_number(const Track &track)
+{
+	ss_ filename = get_filename_from_path(track.path);
+	const char *p = filename.c_str();
+	for(;;){
+		if(*p == 0)
+			return -1;
+		if(*p >= '0' && *p <= '9'){
+			return atoi(p);
+		}
+		p++;
+	}
+}
+
+void mr_shuffle_detect_albums()
+{
+	// Determine bool mr_shuffle_tracks based on whether the album has
+	// numbered tracks from 1 to something or not
+	for(auto &album : current_media_content.albums){
+		sv_<int> track_numbers; // -1 = not detected
+		for(auto &track : album.tracks){
+			track_numbers.push_back(detect_track_number(track));
+		}
+		bool numbers_found = true;
+		for(int i=0; i<(int)track_numbers.size(); i++){
+			bool found = false;
+			for(int j=0; j<(int)track_numbers.size(); j++){
+				if(track_numbers[j] == i+1){
+					found = true;
+					break;
+				}
+			}
+			if(!found){
+				numbers_found = false;
+				break;
+			}
+		}
+		album.mr_shuffle_tracks = !numbers_found;
+	}
+}
+
 void scan_current_mount()
 {
 	printf("Scanning...\n");
@@ -1785,6 +1876,12 @@ void scan_current_mount()
 	// Create shuffled album order
 	create_shuffled_order(current_media_content.shuffled_album_order,
 			current_media_content.albums.size());
+
+	// Create mr. shuffled album order
+	create_mr_shuffled_order(current_media_content.mr_shuffled_album_order,
+			current_media_content.albums.size());
+
+	mr_shuffle_detect_albums();
 
 	printf("Scanned %zu albums.\n", current_media_content.albums.size());
 

@@ -22,3 +22,19 @@ static void create_shuffled_order(sv_<size_t> &shuffled_order, size_t n)
 	std::random_shuffle(shuffled_order.begin(), shuffled_order.end());
 }
 
+static void create_mr_shuffled_order(sv_<size_t> &shuffled_order, size_t n)
+{
+	size_t n0 = (n + 4) / 5;
+	sv_<size_t> shuffled_order0;
+	create_shuffled_order(shuffled_order0, n0);
+	shuffled_order.clear();
+	shuffled_order.reserve(n);
+	for(size_t i0=0; i0<n0; i0++){
+		for(size_t i1=0; i1<5; i1++){
+			size_t track_i = shuffled_order0[i0] * 5 + i1;
+			if(track_i < n)
+				shuffled_order.push_back(track_i);
+		}
+	}
+}
+
