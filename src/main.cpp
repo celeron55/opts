@@ -147,6 +147,10 @@ public:
 		const Album &album = mc.albums[album_i(mc)];
 		if(album.tracks.empty())
 			return 0;
+		if(track_seq_i < 0 || track_seq_i >= (int)album.tracks.size()){
+			printf("track_seq_i overflow\n");
+			return 0;
+		}
 		if(track_progress_mode == TPM_SHUFFLE_ALL ||
 				track_progress_mode == TPM_SHUFFLE_TRACKS){
 			if(album.shuffled_track_order.size() != album.tracks.size())
