@@ -986,8 +986,10 @@ void set_collection_part(const ss_ &part)
 
 	printf("Switched to part \"%s\"\n", cs(current_collection_part));
 
-	// Reset cursor
-	last_succesfully_playing_cursor = PlayCursor();
+	if(part != ""){
+		// Reset cursor (unless switching away from parts into full mode)
+		last_succesfully_playing_cursor = PlayCursor();
+	}
 
 	// Re-scan
 	scan_current_mount();
