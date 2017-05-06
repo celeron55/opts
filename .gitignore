@@ -6,3 +6,4 @@ session.vim
 /saved_state*
 /avrdude.log*
 /todo.txt
+/local
