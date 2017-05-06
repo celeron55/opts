@@ -1323,7 +1323,11 @@ void handle_stdin()
 				void do_intro();
 				do_intro();
 			} else if(command == "i" || command == "info"){
-				printf("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
+				if(current_collection_part != "")
+					printf("Collection part: \"%s\"\n",
+							cs(current_collection_part));
+				printf("Track progress mode: %s\n",
+						tpm_to_string(track_progress_mode));
 				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "path"){
 				Track track = get_track(current_media_content, current_cursor);
