@@ -23,7 +23,12 @@ static ss_ squeeze(const ss_ &s0, size_t len, size_t startpos=0, size_t try_len=
 	if(s.size() > try_len){
 		size_t good_beginning = 0;
 		for(size_t i=0; i<s.size(); i++){
-			if((s[i] < 'a' || s[i] > 'z') && (s[i] < 'A' || s[i] > 'Z')){
+			if(s[i] == '|'){
+				// There was no good beginning in the first part of the name;
+				// fall back to just using the entire name
+				good_beginning = 0;
+				break;
+			} else if((s[i] < 'a' || s[i] > 'z') && (s[i] < 'A' || s[i] > 'Z')){
 				good_beginning = i;
 			} else {
 				good_beginning = i;
