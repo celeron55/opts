@@ -1024,6 +1024,18 @@ void handle_control_input_digit(int input_digit)
 		return;
 	}
 
+	if(input_digit == 1){
+		const int seconds = 30;
+		mpv_command_string(mpv, cs("seek -"+itos(seconds)));
+		return;
+	}
+
+	if(input_digit == 2){
+		const int seconds = 30;
+		mpv_command_string(mpv, cs("seek +"+itos(seconds)));
+		return;
+	}
+
 	if(input_digit == 3){
 		next_collection_part(-1);
 		// TODO: Add a temp text display prioritization system
