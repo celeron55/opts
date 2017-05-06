@@ -65,6 +65,7 @@ up_<FileWatch> partitions_watch;
 
 ss_ current_mount_device;
 ss_ current_mount_path;
+ss_ current_root_directory;
 
 bool queued_pause = false;
 sv_<size_t> queued_album_shuffled_track_order;
@@ -322,6 +323,8 @@ void save_stuff()
 	}
 	save_blob += "\n";
 
+	save_blob += current_root_directory + "\n";
+
 	std::ofstream f(saved_state_path.c_str(), std::ios::binary);
 	f<<save_blob;
 	f.close();
@@ -362,6 +365,8 @@ void load_stuff()
 		int i = stoi(order_f.next(";"), 0);
 		queued_album_shuffled_track_order.push_back(i);
 	}
+
+	current_root_directory = f.next("\n");
 
 	current_cursor = last_succesfully_playing_cursor;
 
@@ -963,10 +968,79 @@ void update_stateful_input()
 {
 }
 
+sv_<ss_> get_root_directories();
+void scan_current_mount();
+
+void reset_root_directory()
+{
+	current_root_directory = "";
+
+	// Show directory
+	arduino_set_temp_text("- All -");
+	// Delay track scroll for one second
+	display_update_timestamp = time(0) + 1;
+
+	printf("Cycled root directory to \"%s\"\n", cs(current_root_directory));
+
+	scan_current_mount();
+}
+
+void next_root_directory(int dir)
+{
+	sv_<ss_> root_directories = get_root_directories();
+	int current_root_directory_i = -1;
+	for(size_t i=0; i<root_directories.size(); i++){
+		if(root_directories[i] == current_root_directory){
+			current_root_directory_i = i;
+			break;
+		}
+	}
+
+	current_root_directory_i += dir;
+	if(current_root_directory_i < 0)
+		current_root_directory_i = root_directories.size() + current_root_directory_i;
+
+	if((size_t)current_root_directory_i >= root_directories.size()){
+		current_root_directory = "";
+
+		// Show directory
+		arduino_set_temp_text("- All -");
+		// Delay track scroll for one second
+		display_update_timestamp = time(0) + 1;
+	} else {
+		if((size_t)current_root_directory_i < root_directories.size())
+			current_root_directory = root_directories[current_root_directory_i];
+
+		// Show directory
+		arduino_set_temp_text(squeeze(current_root_directory, arduino_display_width));
+		// Delay track scroll for one second
+		display_update_timestamp = time(0) + 1;
+	}
+
+	printf("Cycled root directory to \"%s\"\n", cs(current_root_directory));
+
+	scan_current_mount();
+}
+
 void handle_control_input_digit(int input_digit)
 {
 	if(stateful_input_mode != SIM_NONE){
 		handle_control_stateful_input_mode_input('0'+input_digit);
+		return;
+	}
+
+	if(input_digit == 3){
+		next_root_directory(-1);
+		// TODO: Add a temp text display prioritization system
+		sleep(1); // Wait while directory is shown on screen
+		return;
+	}
+
+	if(input_digit == 4){
+		next_root_directory(1);
+		// TODO: Add a temp text display prioritization system
+		sleep(1); // Wait while directory is shown on screen
+		return;
 	}
 
 	// Album and track number will be displayed
@@ -1154,6 +1228,7 @@ void handle_stdin()
 				printf("  intro\n");
 				printf("  i, info (playmodeget + pos)\n");
 				printf("  path (show path of current track)\n");
+				printf("  nr/pr/rr (next/previous/reset root directory)\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
@@ -1244,6 +1319,12 @@ void handle_stdin()
 			} else if(command == "path"){
 				Track track = get_track(current_media_content, current_cursor);
 				printf("%s\n", cs(track.path));
+			} else if(command == "nr"){
+				next_root_directory(1);
+			} else if(command == "pr"){
+				next_root_directory(-1);
+			} else if(command == "rr"){
+				reset_root_directory();
 			} else if(w1n == "keypress"){
 				int key = stoi(fn.next(""), -1);
 				if(key != -1){
@@ -1861,20 +1942,65 @@ void mr_shuffle_detect_albums()
 	}
 }
 
+sv_<ss_> get_root_directories()
+{
+	sv_<ss_> media_paths;
+
+	if(!static_media_paths.empty()){
+		for(const ss_ &path : static_media_paths)
+			media_paths.push_back(path);
+	} else {
+		media_paths.push_back(current_mount_path);
+	}
+
+	sv_<ss_> subdirs;
+
+	for(const ss_ &path : media_paths){
+		DirLister dl(path.c_str());
+		for(;;){
+			int ftype;
+			char fname[PATH_MAX];
+			if(!dl.get_next(&ftype, fname, PATH_MAX))
+				break;
+			if(fname[0] == '.')
+				continue;
+			if(ftype == FS_FILE){
+				continue;
+			} else if(ftype == FS_DIR){
+				//printf("Dir: %s\n", cs(path+"/"+fname));
+				subdirs.push_back(fname);
+				// TODO: Don't add duplicates
+			}
+		}
+	}
+
+	// Sort subdirs
+	std::sort(subdirs.begin(), subdirs.end());
+
+	return subdirs;
+}
+
 void scan_current_mount()
 {
-	printf("Scanning...\n");
+	if(current_root_directory != "")
+		printf("Scanning (root: %s)\n", cs(current_root_directory));
+	else
+		printf("Scanning...\n");
 
 	//disappeared_tracks.clear();
 	current_media_content.albums.clear();
 
+	ss_ scan_midfix;
+	if(current_root_directory != "")
+		scan_midfix = "/"+current_root_directory;
+
 	if(!static_media_paths.empty()){
 		int n = 1;
 		for(const ss_ &path : static_media_paths){
-			scan_directory("root_"+itos(n++), path, current_media_content.albums);
+			scan_directory("root_"+itos(n++), path+scan_midfix, current_media_content.albums);
 		}
 	} else {
-		scan_directory("root", current_mount_path, current_media_content.albums);
+		scan_directory("root", current_mount_path+scan_midfix, current_media_content.albums);
 	}
 
 	// Create shuffled album order
