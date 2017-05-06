@@ -65,7 +65,7 @@ up_<FileWatch> partitions_watch;
 
 ss_ current_mount_device;
 ss_ current_mount_path;
-ss_ current_root_directory;
+ss_ current_collection_part;
 
 bool queued_pause = false;
 sv_<size_t> queued_album_shuffled_track_order;
@@ -323,7 +323,7 @@ void save_stuff()
 	}
 	save_blob += "\n";
 
-	save_blob += current_root_directory + "\n";
+	save_blob += current_collection_part + "\n";
 
 	std::ofstream f(saved_state_path.c_str(), std::ios::binary);
 	f<<save_blob;
@@ -366,7 +366,7 @@ void load_stuff()
 		queued_album_shuffled_track_order.push_back(i);
 	}
 
-	current_root_directory = f.next("\n");
+	current_collection_part = f.next("\n");
 
 	current_cursor = last_succesfully_playing_cursor;
 
@@ -968,58 +968,53 @@ void update_stateful_input()
 {
 }
 
-sv_<ss_> get_root_directories();
+sv_<ss_> get_collection_parts();
 void scan_current_mount();
 
-void reset_root_directory()
+void set_collection_part(const ss_ &part)
 {
-	current_root_directory = "";
+	current_collection_part = part;
 
-	// Show directory
-	arduino_set_temp_text("- All -");
+	// Show part
+	if(current_collection_part == ""){
+		arduino_set_temp_text("- All -");
+	} else {
+		arduino_set_temp_text(squeeze(current_collection_part, arduino_display_width));
+	}
 	// Delay track scroll for one second
 	display_update_timestamp = time(0) + 1;
 
-	printf("Cycled root directory to \"%s\"\n", cs(current_root_directory));
+	printf("Switched to part \"%s\"\n", cs(current_collection_part));
 
+	// Reset cursor
+	last_succesfully_playing_cursor = PlayCursor();
+
+	// Re-scan
 	scan_current_mount();
 }
 
-void next_root_directory(int dir)
+void next_collection_part(int dir)
 {
-	sv_<ss_> root_directories = get_root_directories();
-	int current_root_directory_i = -1;
-	for(size_t i=0; i<root_directories.size(); i++){
-		if(root_directories[i] == current_root_directory){
-			current_root_directory_i = i;
+	sv_<ss_> collection_parts = get_collection_parts();
+	int current_collection_part_i = -1;
+	for(size_t i=0; i<collection_parts.size(); i++){
+		if(collection_parts[i] == current_collection_part){
+			current_collection_part_i = i;
 			break;
 		}
 	}
 
-	current_root_directory_i += dir;
-	if(current_root_directory_i < 0)
-		current_root_directory_i = root_directories.size() + current_root_directory_i;
+	current_collection_part_i += dir;
+	if(current_collection_part_i < 0)
+		current_collection_part_i = collection_parts.size() + current_collection_part_i;
 
-	if((size_t)current_root_directory_i >= root_directories.size()){
-		current_root_directory = "";
-
-		// Show directory
-		arduino_set_temp_text("- All -");
-		// Delay track scroll for one second
-		display_update_timestamp = time(0) + 1;
+	if((size_t)current_collection_part_i >= collection_parts.size()){
+		set_collection_part("");
 	} else {
-		if((size_t)current_root_directory_i < root_directories.size())
-			current_root_directory = root_directories[current_root_directory_i];
-
-		// Show directory
-		arduino_set_temp_text(squeeze(current_root_directory, arduino_display_width));
-		// Delay track scroll for one second
-		display_update_timestamp = time(0) + 1;
+		if((size_t)current_collection_part_i < collection_parts.size())
+			current_collection_part = collection_parts[current_collection_part_i];
+		set_collection_part(current_collection_part);
 	}
-
-	printf("Cycled root directory to \"%s\"\n", cs(current_root_directory));
-
-	scan_current_mount();
 }
 
 void handle_control_input_digit(int input_digit)
@@ -1030,14 +1025,14 @@ void handle_control_input_digit(int input_digit)
 	}
 
 	if(input_digit == 3){
-		next_root_directory(-1);
+		next_collection_part(-1);
 		// TODO: Add a temp text display prioritization system
 		sleep(1); // Wait while directory is shown on screen
 		return;
 	}
 
 	if(input_digit == 4){
-		next_root_directory(1);
+		next_collection_part(1);
 		// TODO: Add a temp text display prioritization system
 		sleep(1); // Wait while directory is shown on screen
 		return;
@@ -1228,7 +1223,7 @@ void handle_stdin()
 				printf("  intro\n");
 				printf("  i, info (playmodeget + pos)\n");
 				printf("  path (show path of current track)\n");
-				printf("  nr/pr/rr (next/previous/reset root directory)\n");
+				printf("  np/pp/rp/lp/sp<n> (next/previous/reset/list/select collection part)\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
@@ -1319,12 +1314,29 @@ void handle_stdin()
 			} else if(command == "path"){
 				Track track = get_track(current_media_content, current_cursor);
 				printf("%s\n", cs(track.path));
-			} else if(command == "nr"){
-				next_root_directory(1);
-			} else if(command == "pr"){
-				next_root_directory(-1);
-			} else if(command == "rr"){
-				reset_root_directory();
+			} else if(command == "np"){
+				next_collection_part(1);
+			} else if(command == "pp"){
+				next_collection_part(-1);
+			} else if(command == "rp"){
+				set_collection_part("");
+			} else if(command == "lp"){
+				sv_<ss_> parts = get_collection_parts();
+				for(size_t i=0; i<parts.size(); i++){
+					if(parts[i] == current_collection_part)
+						printf("-> #%zu: %s\n", i+1, cs(parts[i]));
+					else
+						printf("#%zu: %s\n", i+1, cs(parts[i]));
+				}
+			} else if(w1n == "sp"){
+				sv_<ss_> parts = get_collection_parts();
+				int part_i = stoi(fn.next(""), 0) - 1;
+				if(part_i == -1)
+					set_collection_part("");
+				else if((size_t)part_i < parts.size())
+					set_collection_part(parts[part_i]);
+				else
+					printf("Part #%i doesn't exist\n", part_i+1);
 			} else if(w1n == "keypress"){
 				int key = stoi(fn.next(""), -1);
 				if(key != -1){
@@ -1942,7 +1954,7 @@ void mr_shuffle_detect_albums()
 	}
 }
 
-sv_<ss_> get_root_directories()
+sv_<ss_> get_collection_parts()
 {
 	sv_<ss_> media_paths;
 
@@ -1982,8 +1994,8 @@ sv_<ss_> get_root_directories()
 
 void scan_current_mount()
 {
-	if(current_root_directory != "")
-		printf("Scanning (root: %s)\n", cs(current_root_directory));
+	if(current_collection_part != "")
+		printf("Scanning (collection: \"%s\")\n", cs(current_collection_part));
 	else
 		printf("Scanning...\n");
 
@@ -1991,8 +2003,8 @@ void scan_current_mount()
 	current_media_content.albums.clear();
 
 	ss_ scan_midfix;
-	if(current_root_directory != "")
-		scan_midfix = "/"+current_root_directory;
+	if(current_collection_part != "")
+		scan_midfix = "/"+current_collection_part;
 
 	if(!static_media_paths.empty()){
 		int n = 1;
