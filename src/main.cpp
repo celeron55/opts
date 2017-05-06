@@ -1309,15 +1309,24 @@ void handle_stdin()
 			} else if(w1 == "randomtrack" || w1 == "rt"){
 				handle_control_random_track();
 			} else if(command == "albumlist" || command == "al" || command == "la"){
-				for(size_t i=0; i<current_media_content.albums.size(); i++)
-					printf("#%zu: %s\n", i+1, cs(current_media_content.albums[i].name));
+				auto &cursor = current_cursor;
+				for(size_t i=0; i<current_media_content.albums.size(); i++){
+					if(cursor.album_name == current_media_content.albums[i].name)
+						printf("-> #%zu: %s\n", i+1, cs(current_media_content.albums[i].name));
+					else
+						printf("#%zu: %s\n", i+1, cs(current_media_content.albums[i].name));
+				}
 			} else if(command == "tracklist" || command == "tl" || command == "lt"){
 				auto &cursor = current_cursor;
 				auto &mc = current_media_content;
 				if(cursor.album_seq_i >= 0 && cursor.album_seq_i < (int)mc.albums.size()){
 					auto &album = mc.albums[cursor.album_i(mc)];
-					for(size_t i=0; i<album.tracks.size(); i++)
-						printf("#%zu: %s\n", i+1, cs(album.tracks[i].display_name));
+					for(size_t i=0; i<album.tracks.size(); i++){
+						if(cursor.track_name == album.tracks[i].display_name)
+							printf("-> #%zu: %s\n", i+1, cs(album.tracks[i].display_name));
+						else
+							printf("#%zu: %s\n", i+1, cs(album.tracks[i].display_name));
+					}
 				}
 			} else if(command == "intro"){
 				void do_intro();
