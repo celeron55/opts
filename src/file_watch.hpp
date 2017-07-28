@@ -2,7 +2,9 @@
 #pragma once
 #include "types.hpp"
 #include <functional>
-#include <sys/inotify.h>
+#ifndef __WIN32__
+#  include <sys/inotify.h>
+#endif
 
 struct FileWatch
 {

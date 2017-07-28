@@ -41,6 +41,46 @@ void strip_filename(char *path)
 	path[i] = 0;
 }
 
+#ifdef __WIN32__
+
+DirLister::DirLister(const char *path)
+{
+	ss_ pattern = ss_() + path + "/*";
+	if((hFind = FindFirstFile(pattern.c_str(), &FindFileData)) == INVALID_HANDLE_VALUE)
+		printf("ERROR: Failed to open path %s\n", path);
+}
+
+DirLister::~DirLister()
+{
+	if(hFind != INVALID_HANDLE_VALUE)
+		FindClose(hFind);
+}
+
+bool DirLister::get_next(int *type, char *name, unsigned int maxlen)
+{
+	if(hFind == INVALID_HANDLE_VALUE)
+		return false;
+
+	if(FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		*type = FS_DIR;
+	else
+		*type = FS_FILE;
+	snprintf(name, maxlen, FindFileData.cFileName);
+
+	if(!FindNextFile(hFind, &FindFileData)){
+		FindClose(hFind);
+		hFind = INVALID_HANDLE_VALUE;
+	}
+	return true;
+}
+
+bool DirLister::valid()
+{
+	return hFind != INVALID_HANDLE_VALUE;
+}
+
+#else // __WIN32__
+
 DirLister::DirLister(const char *path)
 {
 	dir = opendir(path);
@@ -62,4 +102,11 @@ bool DirLister::get_next(int *type, char *name, unsigned int maxlen)
 	else *type = FS_OTHER;
 	return true;
 }
+
+bool DirLister::valid()
+{
+	return dir != nullptr;
+}
+
+#endif // __WIN32__
 

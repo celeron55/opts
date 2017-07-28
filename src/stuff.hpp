@@ -1,4 +1,14 @@
 #pragma once
+
+#ifdef __WIN32__
+
+static bool set_interface_attribs(int fd, int speed, int parity)
+{
+	return false;
+}
+
+#else
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -47,3 +57,4 @@ static bool set_interface_attribs(int fd, int speed, int parity)
 	return true;
 }
 
+#endif

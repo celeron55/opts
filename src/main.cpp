@@ -14,14 +14,29 @@
 #include <mpv/client.h>
 #include <fstream>
 #include <algorithm> // sort
-#include <sys/poll.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/mount.h>
-#include <unistd.h>
-#include <signal.h>
-#include <fcntl.h>
-#include <termios.h>
+#ifdef __WIN32__
+#  include <time.h>
+#  include "Winsock2.h"
+#  include <windows.h>
+static void sleep(int s) { Sleep(s * 1000); }
+static void usleep(int us) { Sleep(us / 1000); }
+#  include "Shlwapi.h"
+#  define strcasestr StrStrI
+#  include "conio.h" // _kbhit, _getch
+#  define printf_(...) do{printf(__VA_ARGS__); fflush(stdout);} while(0)
+#  define fprintf_(f, ...) do{fprintf(f, __VA_ARGS__); fflush(f);} while(0)
+#else
+#  include <sys/poll.h>
+#  include <sys/types.h>
+#  include <sys/stat.h>
+#  include <sys/mount.h>
+#  include <unistd.h>
+#  include <signal.h>
+#  include <fcntl.h>
+#  include <termios.h>
+#  define printf_(...) printf(__VA_ARGS__)
+#  define fprintf_(f, ...) fprintf(f, __VA_ARGS__)
+#endif
 #include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -131,7 +146,7 @@ public:
 		if(mc.albums.empty())
 			return 0;
 		if(album_seq_i < 0 || album_seq_i >= (int)mc.albums.size()){
-			printf("album_seq_i overflow\n");
+			printf_("album_seq_i overflow\n");
 			return 0;
 		}
 		if(track_progress_mode == TPM_SHUFFLE_ALL){
@@ -149,7 +164,7 @@ public:
 		if(album.tracks.empty())
 			return 0;
 		if(track_seq_i < 0 || track_seq_i >= (int)album.tracks.size()){
-			printf("track_seq_i overflow\n");
+			printf_("track_seq_i overflow\n");
 			return 0;
 		}
 		if(track_progress_mode == TPM_SHUFFLE_ALL ||
@@ -244,7 +259,7 @@ void on_loadfile(double start_pos, const ss_ &track_name, const ss_ &album_name)
 	current_track_stream_end = 0; // Will be filled in at time-pos getter code or something
 
 	if(current_cursor.track_name != track_name){
-		printf("WARNING: Changing track name at loadfile to \"%s\"\n",
+		printf_("WARNING: Changing track name at loadfile to \"%s\"\n",
 				cs(track_name));
 		current_cursor.track_name = track_name;
 		current_cursor.album_name = album_name;
@@ -292,7 +307,7 @@ void save_stuff()
 	last_save_timestamp = time(0);
 
 	if(LOG_DEBUG)
-		printf("Saving stuff to %s...\n", cs(saved_state_path));
+		printf_("Saving stuff to %s...\n", cs(saved_state_path));
 
 	// If at <5s into the track, start from the beginning next time
 	double save_time_pos = last_succesfully_playing_cursor.time_pos;
@@ -330,7 +345,7 @@ void save_stuff()
 	f.close();
 
 	if(LOG_DEBUG)
-		printf("Saved.\n");
+		printf_("Saved.\n");
 }
 
 void load_stuff()
@@ -339,10 +354,10 @@ void load_stuff()
 	{
 		std::ifstream f(saved_state_path.c_str());
 		if(!f.good()){
-			printf("No saved state at %s\n", cs(saved_state_path));
+			printf_("No saved state at %s\n", cs(saved_state_path));
 			return;
 		}
-		printf("Loading saved state from %s\n", cs(saved_state_path));
+		printf_("Loading saved state from %s\n", cs(saved_state_path));
 		data = ss_((std::istreambuf_iterator<char>(f)),
 				std::istreambuf_iterator<char>());
 	}
@@ -372,19 +387,19 @@ void load_stuff()
 
 	if(queued_pause){
 		if(LOG_DEBUG)
-			printf("Queuing pause\n");
+			printf_("Queuing pause\n");
 	}
 }
 
 Track get_track(const MediaContent &mc, const PlayCursor &cursor)
 {
 	if(cursor.album_seq_i >= (int)mc.albums.size()){
-		printf("Album cursor overflow\n");
+		printf_("Album cursor overflow\n");
 		return Track();
 	}
 	const Album &album = mc.albums[cursor.album_i(mc)];
 	if(cursor.track_seq_i >= (int)album.tracks.size()){
-		printf("Track cursor overflow\n");
+		printf_("Track cursor overflow\n");
 		return Track();
 	}
 	return album.tracks[cursor.track_i(mc)];
@@ -426,7 +441,7 @@ void cursor_bound_wrap(const MediaContent &mc, PlayCursor &cursor)
 ss_ get_album_name(const MediaContent &mc, const PlayCursor &cursor)
 {
 	if(cursor.album_seq_i >= (int)mc.albums.size()){
-		printf("Album cursor overflow\n");
+		printf_("Album cursor overflow\n");
 		return "ERR:AOVF";
 	}
 	const Album &album = mc.albums[cursor.album_i(mc)];
@@ -436,12 +451,12 @@ ss_ get_album_name(const MediaContent &mc, const PlayCursor &cursor)
 ss_ get_track_name(const MediaContent &mc, const PlayCursor &cursor)
 {
 	if(cursor.album_seq_i >= (int)mc.albums.size()){
-		printf("Album cursor overflow\n");
+		printf_("Album cursor overflow\n");
 		return "ERR:AOVF";
 	}
 	const Album &album = mc.albums[cursor.album_i(mc)];
 	if(cursor.track_seq_i >= (int)album.tracks.size()){
-		printf("Track cursor overflow\n");
+		printf_("Track cursor overflow\n");
 		return "ERR:TOVF";
 	}
 	return album.tracks[cursor.track_i(mc)].display_name;
@@ -509,7 +524,7 @@ bool resolve_track_from_any_album(const MediaContent &mc, PlayCursor &cursor)
 // false and leave cursor as-is.
 bool force_resolve_track(const MediaContent &mc, PlayCursor &cursor)
 {
-	printf("Force-resolving track\n");
+	printf_("Force-resolving track\n");
 
 	// First find album
 	PlayCursor cursor1 = cursor;
@@ -524,13 +539,13 @@ bool force_resolve_track(const MediaContent &mc, PlayCursor &cursor)
 		}
 	}
 	if(!album_found){
-		printf("-> Didn't find album \"%s\"\n", cs(cursor.album_name));
+		printf_("-> Didn't find album \"%s\"\n", cs(cursor.album_name));
 		return resolve_track_from_any_album(mc, cursor);
 	}
 
 	// Get queued shuffled track order if such exists
 	if(!queued_album_shuffled_track_order.empty()){
-		printf("Applying queued album shuffled track order\n");
+		printf_("Applying queued album shuffled track order\n");
 		auto &cursor = current_cursor;
 		auto &mc = current_media_content;
 		if(cursor.album_i(mc) < (int)mc.albums.size()){
@@ -539,10 +554,10 @@ bool force_resolve_track(const MediaContent &mc, PlayCursor &cursor)
 				album.shuffled_track_order = queued_album_shuffled_track_order;
 				queued_album_shuffled_track_order.clear();
 			} else {
-				printf("Applying queued album shuffled track order: track number mismatch\n");
+				printf_("Applying queued album shuffled track order: track number mismatch\n");
 			}
 		} else {
-			printf("Applying queued album shuffled track order: overflow\n");
+			printf_("Applying queued album shuffled track order: overflow\n");
 		}
 	}
 
@@ -550,17 +565,17 @@ bool force_resolve_track(const MediaContent &mc, PlayCursor &cursor)
 	const Album &album = mc.albums[cursor.album_i(mc)];
 	const Track &track = album.tracks[cursor.track_i(mc)];
 	if(track.display_name == cursor.track_name){
-		printf("Found as track #%i on album #%i\n",
+		printf_("Found as track #%i on album #%i\n",
 				cursor.track_i(mc)+1, cursor.album_i(mc)+1);
 		return true;
 	}
 	bool found = resolve_track_from_current_album(mc, cursor);
 	if(found){
-		printf("Found as track #%i on album #%i\n",
+		printf_("Found as track #%i on album #%i\n",
 				cursor.track_i(mc)+1, cursor.album_i(mc)+1);
 		return true;
 	}
-	printf("Didn't find track on current album; searching everywhere\n");
+	printf_("Didn't find track on current album; searching everywhere\n");
 	return resolve_track_from_any_album(mc, cursor);
 }
 
@@ -575,13 +590,14 @@ size_t get_total_tracks(const MediaContent &mc)
 static inline void check_mpv_error(int status)
 {
     if (status < 0) {
-        printf("mpv API error: %s\n", mpv_error_string(status));
+        printf_("mpv API error: %s\n", mpv_error_string(status));
         exit(1);
     }
 }
 
 ss_ read_any(int fd, bool *dst_error=NULL)
 {
+#ifndef __WIN32__
 	struct pollfd fds;
 	int ret;
 	fds.fd = fd;
@@ -601,30 +617,68 @@ ss_ read_any(int fd, bool *dst_error=NULL)
 			*dst_error = true;
 		return "";
 	}
+#else
+	if(fd != 0)
+		return "";
+	static HANDLE stdinHandle;
+	stdinHandle = GetStdHandle(STD_INPUT_HANDLE);
+	switch( WaitForSingleObject( stdinHandle, 1 ) ) // timeout ms
+	{
+	case( WAIT_TIMEOUT ):
+		break; // return from this function to allow thread to terminate
+	case( WAIT_OBJECT_0 ):
+		if( _kbhit() ) // _kbhit() always returns immediately
+		{
+			int i = _getch();
+			if(i == '\r')
+				printf_("\r\n");
+			else
+				printf_("%c", i);
+			return ss_()+(char)i;
+		}
+		else // some sort of other events , we need to clear it from the queue
+		{
+			// clear events
+			INPUT_RECORD r[512];
+			DWORD read;
+			ReadConsoleInput( stdinHandle, r, 512, &read );
+		}
+		break;
+	case( WAIT_FAILED ):
+		printf_("INFO: stdin WAIT_FAILED\n");
+		break;
+	case( WAIT_ABANDONED ): 
+		printf_("INFO: stdin WAIT_ABANDONED\n");
+		break;
+	default:
+		printf_("INFO: stdin: Unknown return value from WaitForSingleObject\n");
+	}
+	return "";
+#endif
 }
 
 void force_start_at_cursor()
 {
 	if(LOG_DEBUG)
-		printf("Force-start at cursor\n");
-	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+		printf_("Force-start at cursor\n");
+	printf_("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 
 	Track track = get_track(current_media_content, current_cursor);
 	if(track.display_name != "" && current_cursor.track_name == ""){
-		printf("Warning: Cursor has empty track name\n");
+		printf_("Warning: Cursor has empty track name\n");
 	} else if(track.display_name != current_cursor.track_name){
-		printf("Track name does not match cursor name\n");
+		printf_("Track name does not match cursor name\n");
 		track_was_loaded = false;
 		return;
 	}
 
 	if(current_cursor.time_pos >= 0.001){
 		if(LOG_DEBUG)
-			printf("Force-starting at %fs\n", current_cursor.time_pos);
+			printf_("Force-starting at %fs\n", current_cursor.time_pos);
 		mpv_set_option_string(mpv, "start", cs(ftos(current_cursor.time_pos)));
 	} else {
 		if(LOG_DEBUG)
-			printf("Force-starting at 0s\n");
+			printf_("Force-starting at 0s\n");
 		mpv_set_option_string(mpv, "start", "#1");
 	}
 
@@ -648,12 +702,16 @@ void force_start_at_cursor()
 bool mpv_is_idle()
 {
 	char *idle_cs = NULL;
+	// For some reason the idle property always says "yes" on Windows, so don't
+	// even read it on Windows
+#ifndef __WIN32__
 	mpv_get_property(mpv, "idle", MPV_FORMAT_STRING, &idle_cs);
+#endif
 	if(idle_cs == NULL){
 		static bool warned = false;
 		if(!warned){
 			warned = true;
-			printf("WARNING: MPV property \"idle\" returns NULL; "
+			printf_("WARNING: MPV property \"idle\" returns NULL; "
 					"using the filename property instead.\n");
 		}
 		char *filename_cs = NULL;
@@ -676,9 +734,9 @@ void handle_control_playpause()
 		mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &was_pause);
 
 		if(was_pause)
-			printf("Resume\n");
+			printf_("Resume\n");
 		else
-			printf("Pause\n");
+			printf_("Pause\n");
 
 		// Some kind of track is loaded; toggle playback
 		check_mpv_error(mpv_command_string(mpv, "pause"));
@@ -727,7 +785,7 @@ void refresh_track()
 	char *playing_path = NULL;
 	ScopeEndTrigger set([&](){ mpv_free(playing_path); });
 	mpv_get_property(mpv, "path", MPV_FORMAT_STRING, &playing_path);
-	//printf("Currently playing: %s\n", playing_path);
+	//printf_("Currently playing: %s\n", playing_path);
 
 	Track track = get_track(current_media_content, current_cursor);
 	if(track.path != ""){
@@ -735,7 +793,7 @@ void refresh_track()
 		current_cursor.album_name = get_album_name(current_media_content, current_cursor);
 
 		if(playing_path == NULL || ss_(playing_path) != track.path){
-			printf("Playing path does not match current track; Switching track.\n");
+			printf_("Playing path does not match current track; Switching track.\n");
 
 			load_and_play_current_track_from_start();
 		}
@@ -800,7 +858,7 @@ void start_at_relative_track(int album_add, int track_add, bool force_show_album
 	current_cursor.album_name = get_album_name(current_media_content, current_cursor);
 	if(album_add != 0 || force_show_album)
 		temp_display_album();
-	printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+	printf_("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 	load_and_play_current_track_from_start();
 }
 
@@ -837,7 +895,7 @@ const char* tpm_to_string(TrackProgressMode m)
 
 void handle_changed_track_progress_mode()
 {
-	printf("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
+	printf_("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
 
 	arduino_set_temp_text(tpm_to_string(track_progress_mode));
 
@@ -867,7 +925,7 @@ void handle_control_playmode()
 void handle_control_track_number(int track_n)
 {
 	if(track_n < 1){
-		printf("handle_control_track_number(): track_n = %i < 1\n", track_n);
+		printf_("handle_control_track_number(): track_n = %i < 1\n", track_n);
 		arduino_set_temp_text("PASS");
 		return;
 	}
@@ -876,13 +934,13 @@ void handle_control_track_number(int track_n)
 	auto &cursor = current_cursor;
 	auto &mc = current_media_content;
 	if(cursor.album_seq_i >= (int)mc.albums.size()){
-		printf("handle_control_track_number(): album_seq_i %i doesn't exist\n", cursor.album_seq_i);
+		printf_("handle_control_track_number(): album_seq_i %i doesn't exist\n", cursor.album_seq_i);
 		arduino_set_temp_text("PASS A");
 		return;
 	}
 	const Album &album = mc.albums[cursor.album_i(mc)];
 	if(cursor.track_seq_i >= (int)album.tracks.size()){
-		printf("handle_control_track_number(): track_seq_i %i doesn't exist\n", track_seq_i);
+		printf_("handle_control_track_number(): track_seq_i %i doesn't exist\n", track_seq_i);
 		arduino_set_temp_text("PASS T");
 		return;
 	}
@@ -894,7 +952,7 @@ void handle_control_track_number(int track_n)
 void handle_control_album_number(int album_n)
 {
 	if(album_n < 1){
-		printf("handle_control_album_number(): album_n = %i < 1\n", album_n);
+		printf_("handle_control_album_number(): album_n = %i < 1\n", album_n);
 		arduino_set_temp_text("PASS");
 		return;
 	}
@@ -903,7 +961,7 @@ void handle_control_album_number(int album_n)
 	auto &cursor = current_cursor;
 	auto &mc = current_media_content;
 	if(cursor.album_seq_i >= (int)mc.albums.size()){
-		printf("handle_control_album_number(): album_seq_i %i doesn't exist\n", album_seq_i);
+		printf_("handle_control_album_number(): album_seq_i %i doesn't exist\n", album_seq_i);
 		arduino_set_temp_text("PASS");
 		return;
 	}
@@ -929,7 +987,7 @@ void handle_control_stateful_input_mode_input(char input_char)
 {
 	if(stateful_input_accu.put_char(input_char)){
 		ss_ command = stateful_input_accu.command();
-		printf("Stateful input command: %s\n", cs(command));
+		printf_("Stateful input command: %s\n", cs(command));
 		if(command.size() == 0)
 			return;
 		int input_number = stoi(command, -1);
@@ -984,7 +1042,7 @@ void set_collection_part(const ss_ &part)
 	// Delay track scroll for one second
 	display_update_timestamp = time(0) + 1;
 
-	printf("Switched to part \"%s\"\n", cs(current_collection_part));
+	printf_("Switched to part \"%s\"\n", cs(current_collection_part));
 
 	if(part != ""){
 		// Reset cursor (unless switching away from parts into full mode)
@@ -1058,10 +1116,10 @@ void handle_control_input_digit(int input_digit)
 
 void handle_control_search(const ss_ &searchstring)
 {
-	printf("Searching for \"%s\"...\n", cs(searchstring));
+	printf_("Searching for \"%s\"...\n", cs(searchstring));
 	auto &mc = current_media_content;
 	if(mc.albums.empty()){
-		printf("Cannot search: no media\n");
+		printf_("Cannot search: no media\n");
 		return;
 	}
 	// Start at current cursor + 1 and loop from end to beginning
@@ -1073,13 +1131,13 @@ void handle_control_search(const ss_ &searchstring)
 		for(;;){
 			if(cursor.track_seq_i == current_cursor.track_seq_i &&
 					cursor.album_seq_i == current_cursor.album_seq_i){
-				printf("Not found\n");
+				printf_("Not found\n");
 				return;
 			}
 			auto &track = album.tracks[cursor.track_i(mc)];
-			//printf("track.display_name: %s\n", cs(track.display_name));
+			//printf_("track.display_name: %s\n", cs(track.display_name));
 			if(strcasestr(track.display_name.c_str(), searchstring.c_str())){
-				printf("Found track\n");
+				printf_("Found track\n");
 				current_cursor = cursor;
 				start_at_relative_track(0, 0);
 				return;
@@ -1089,9 +1147,9 @@ void handle_control_search(const ss_ &searchstring)
 				break;
 		}
 		cursor.track_seq_i = 0;
-		//printf("album.name: %s\n", cs(album.name));
+		//printf_("album.name: %s\n", cs(album.name));
 		if(strcasestr(album.name.c_str(), searchstring.c_str())){
-			printf("Found album\n");
+			printf_("Found album\n");
 			current_cursor = cursor;
 			start_at_relative_track(0, 0, true);
 			return;
@@ -1105,7 +1163,7 @@ void handle_control_search(const ss_ &searchstring)
 void handle_control_random_album()
 {
 	if(current_media_content.albums.empty()){
-		printf("Picking random album when there is no media -> recovery mode: "
+		printf_("Picking random album when there is no media -> recovery mode: "
 				"resetting and saving play cursor\n");
 		current_cursor = PlayCursor();
 		last_succesfully_playing_cursor = PlayCursor();
@@ -1113,7 +1171,7 @@ void handle_control_random_album()
 		return;
 	}
 	int album_seq_i = rand() % current_media_content.albums.size();
-	printf("Picking random album #%i\n", album_seq_i+1);
+	printf_("Picking random album #%i\n", album_seq_i+1);
 	current_cursor.album_seq_i = album_seq_i;
 	current_cursor.track_seq_i = 0;
 	start_at_relative_track(0, 0, true);
@@ -1131,12 +1189,12 @@ void handle_control_random_album_approx_num_tracks(size_t approx_num_tracks)
 		}
 	}
 	if(suitable_albums.empty()){
-		printf("No suitable albums\n");
+		printf_("No suitable albums\n");
 		return;
 	}
 	int album_seq_i = suitable_albums[rand() % suitable_albums.size()];
 	auto &album = mc.albums[album_seq_i];
-	printf("Picking random album #%i (%zu tracks) from %zu suitable albums\n",
+	printf_("Picking random album #%i (%zu tracks) from %zu suitable albums\n",
 			album_seq_i+1, album.tracks.size(), suitable_albums.size());
 	current_cursor.album_seq_i = album_seq_i;
 	current_cursor.track_seq_i = 0;
@@ -1153,12 +1211,12 @@ void handle_control_random_album_min_num_tracks(size_t min_num_tracks)
 			suitable_albums.push_back(i);
 	}
 	if(suitable_albums.empty()){
-		printf("No suitable albums\n");
+		printf_("No suitable albums\n");
 		return;
 	}
 	int album_seq_i = suitable_albums[rand() % suitable_albums.size()];
 	auto &album = mc.albums[album_seq_i];
-	printf("Picking random album #%i (%zu tracks) from %zu suitable albums\n",
+	printf_("Picking random album #%i (%zu tracks) from %zu suitable albums\n",
 			album_seq_i+1, album.tracks.size(), suitable_albums.size());
 	current_cursor.album_seq_i = album_seq_i;
 	current_cursor.track_seq_i = 0;
@@ -1175,12 +1233,12 @@ void handle_control_random_album_max_num_tracks(size_t max_num_tracks)
 			suitable_albums.push_back(i);
 	}
 	if(suitable_albums.empty()){
-		printf("No suitable albums\n");
+		printf_("No suitable albums\n");
 		return;
 	}
 	int album_seq_i = suitable_albums[rand() % suitable_albums.size()];
 	auto &album = mc.albums[album_seq_i];
-	printf("Picking random album #%i (%zu tracks) from %zu suitable albums\n",
+	printf_("Picking random album #%i (%zu tracks) from %zu suitable albums\n",
 			album_seq_i+1, album.tracks.size(), suitable_albums.size());
 	current_cursor.album_seq_i = album_seq_i;
 	current_cursor.track_seq_i = 0;
@@ -1195,7 +1253,7 @@ void handle_control_random_track()
 		return;
 	auto &album = mc.albums[cursor.album_i(mc)];
 	int track_seq_i = rand() % album.tracks.size();
-	printf("Picking random track #%i\n", track_seq_i+1);
+	printf_("Picking random track #%i\n", track_seq_i+1);
 	current_cursor.track_seq_i = track_seq_i;
 	start_at_relative_track(0, 0, false);
 }
@@ -1213,31 +1271,31 @@ void handle_stdin()
 			ss_ w1n = command.substr(0, fn.where());
 			fn.while_any(" ");
 			if(command == "help" || command == "h" || command == "?"){
-				printf("Commands:\n");
-				printf("  next, n, +\n");
-				printf("  prev, p, -\n");
-				printf("  nextalbum, na, N, .\n");
-				printf("  prevalbum, pa, P, ,\n");
-				printf("  pause, [space][enter]\n");
-				printf("  fwd, f <seconds: optional>\n");
-				printf("  bwd, b <seconds: optional>\n");
-				printf("  playmode, m\n");
-				printf("  playmodeget, mg\n");
-				printf("  pos\n");
-				printf("  save\n");
-				printf("  /<string> (search) (alias: 1)\n");
-				printf("  album <n>\n");
-				printf("  track <n>\n");
-				printf("  randomalbum, ra, r <approx. #tracks (optional)>\n");
-				printf("  rg, g <min. #tracks> (greater)\n");
-				printf("  rl, l <max. #tracks> (lower)\n");
-				printf("  randomtrack, rt\n");
-				printf("  albumlist, al, la\n");
-				printf("  tracklist, tl, lt\n");
-				printf("  intro\n");
-				printf("  i, info (playmodeget + pos)\n");
-				printf("  path (show path of current track)\n");
-				printf("  np/pp/rp/lp/sp<n> (next/previous/reset/list/select collection part)\n");
+				printf_("Commands:\n");
+				printf_("  next, n, +\n");
+				printf_("  prev, p, -\n");
+				printf_("  nextalbum, na, N, .\n");
+				printf_("  prevalbum, pa, P, ,\n");
+				printf_("  pause, [space][enter]\n");
+				printf_("  fwd, f <seconds: optional>\n");
+				printf_("  bwd, b <seconds: optional>\n");
+				printf_("  playmode, m\n");
+				printf_("  playmodeget, mg\n");
+				printf_("  pos\n");
+				printf_("  save\n");
+				printf_("  /<string> (search) (alias: 1)\n");
+				printf_("  album <n>\n");
+				printf_("  track <n>\n");
+				printf_("  randomalbum, ra, r <approx. #tracks (optional)>\n");
+				printf_("  rg, g <min. #tracks> (greater)\n");
+				printf_("  rl, l <max. #tracks> (lower)\n");
+				printf_("  randomtrack, rt\n");
+				printf_("  albumlist, al, la\n");
+				printf_("  tracklist, tl, lt\n");
+				printf_("  intro\n");
+				printf_("  i, info (playmodeget + pos)\n");
+				printf_("  path (show path of current track)\n");
+				printf_("  np/pp/rp/lp/sp<n> (next/previous/reset/list/select collection part)\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
@@ -1252,18 +1310,18 @@ void handle_stdin()
 				int seconds = stoi(fn.next(""), 30);
 				mpv_command_string(mpv, cs("seek +"+itos(seconds)));
 				current_cursor.time_pos += seconds;
-				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+				printf_("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(w1n == "bwd" || w1n == "b"){
 				int seconds = stoi(fn.next(""), 30);
 				mpv_command_string(mpv, cs("seek -"+itos(seconds)));
 				current_cursor.time_pos -= seconds;
-				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+				printf_("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "playmode" || command == "m"){
 				handle_control_playmode();
 			} else if(command == "playmodeget" || command == "mg"){
-				printf("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
+				printf_("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
 			} else if(command == "pos"){
-				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+				printf_("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "save"){
 				save_stuff();
 			} else if(command.size() >= 2 && (command.substr(0, 1) == "/" ||
@@ -1293,7 +1351,7 @@ void handle_stdin()
 					handle_control_random_album_min_num_tracks(min_num_tracks);
 					last_min_num_tracks = min_num_tracks;
 				} else if(last_min_num_tracks != -1){
-					printf("Using previous parameter: %i\n", last_min_num_tracks);
+					printf_("Using previous parameter: %i\n", last_min_num_tracks);
 					handle_control_random_album_min_num_tracks(last_min_num_tracks);
 				}
 			} else if(w1n == "rl" || w1n == "l"){
@@ -1303,7 +1361,7 @@ void handle_stdin()
 					handle_control_random_album_max_num_tracks(max_num_tracks);
 					last_max_num_tracks = max_num_tracks;
 				} else if(last_max_num_tracks != -1){
-					printf("Using previous parameter: %i\n", last_max_num_tracks);
+					printf_("Using previous parameter: %i\n", last_max_num_tracks);
 					handle_control_random_album_max_num_tracks(last_max_num_tracks);
 				}
 			} else if(w1 == "randomtrack" || w1 == "rt"){
@@ -1312,9 +1370,9 @@ void handle_stdin()
 				auto &cursor = current_cursor;
 				for(size_t i=0; i<current_media_content.albums.size(); i++){
 					if(cursor.album_name == current_media_content.albums[i].name)
-						printf("-> #%zu: %s\n", i+1, cs(current_media_content.albums[i].name));
+						printf_("-> #%zu: %s\n", i+1, cs(current_media_content.albums[i].name));
 					else
-						printf("#%zu: %s\n", i+1, cs(current_media_content.albums[i].name));
+						printf_("#%zu: %s\n", i+1, cs(current_media_content.albums[i].name));
 				}
 			} else if(command == "tracklist" || command == "tl" || command == "lt"){
 				auto &cursor = current_cursor;
@@ -1323,9 +1381,9 @@ void handle_stdin()
 					auto &album = mc.albums[cursor.album_i(mc)];
 					for(size_t i=0; i<album.tracks.size(); i++){
 						if(cursor.track_name == album.tracks[i].display_name)
-							printf("-> #%zu: %s\n", i+1, cs(album.tracks[i].display_name));
+							printf_("-> #%zu: %s\n", i+1, cs(album.tracks[i].display_name));
 						else
-							printf("#%zu: %s\n", i+1, cs(album.tracks[i].display_name));
+							printf_("#%zu: %s\n", i+1, cs(album.tracks[i].display_name));
 					}
 				}
 			} else if(command == "intro"){
@@ -1333,14 +1391,14 @@ void handle_stdin()
 				do_intro();
 			} else if(command == "i" || command == "info"){
 				if(current_collection_part != "")
-					printf("Collection part: \"%s\"\n",
+					printf_("Collection part: \"%s\"\n",
 							cs(current_collection_part));
-				printf("Track progress mode: %s\n",
+				printf_("Track progress mode: %s\n",
 						tpm_to_string(track_progress_mode));
-				printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+				printf_("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "path"){
 				Track track = get_track(current_media_content, current_cursor);
-				printf("%s\n", cs(track.path));
+				printf_("%s\n", cs(track.path));
 			} else if(command == "np"){
 				next_collection_part(1);
 			} else if(command == "pp"){
@@ -1351,9 +1409,9 @@ void handle_stdin()
 				sv_<ss_> parts = get_collection_parts();
 				for(size_t i=0; i<parts.size(); i++){
 					if(parts[i] == current_collection_part)
-						printf("-> #%zu: %s\n", i+1, cs(parts[i]));
+						printf_("-> #%zu: %s\n", i+1, cs(parts[i]));
 					else
-						printf("#%zu: %s\n", i+1, cs(parts[i]));
+						printf_("#%zu: %s\n", i+1, cs(parts[i]));
 				}
 			} else if(w1n == "sp"){
 				sv_<ss_> parts = get_collection_parts();
@@ -1363,7 +1421,7 @@ void handle_stdin()
 				else if((size_t)part_i < parts.size())
 					set_collection_part(parts[part_i]);
 				else
-					printf("Part #%i doesn't exist\n", part_i+1);
+					printf_("Part #%i doesn't exist\n", part_i+1);
 			} else if(w1n == "keypress"){
 				int key = stoi(fn.next(""), -1);
 				if(key != -1){
@@ -1377,7 +1435,7 @@ void handle_stdin()
 					handle_key_release(key);
 				}
 			} else {
-				printf("Invalid command: \"%s\"\n", cs(command));
+				printf_("Invalid command: \"%s\"\n", cs(command));
 			}
 		}
 	}
@@ -1478,21 +1536,24 @@ void handle_key_release(int key)
 
 void try_open_arduino_serial()
 {
+#ifdef __WIN32__
+#else
 	for(const ss_ &arduino_serial_path : arduino_serial_paths){
 		arduino_serial_fd = open(arduino_serial_path.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
 		if(arduino_serial_fd < 0){
-			printf("Failed to open %s\n", cs(arduino_serial_path));
+			printf_("Failed to open %s\n", cs(arduino_serial_path));
 			arduino_serial_fd = -1;
 			continue;
 		}
 		if(!set_interface_attribs(arduino_serial_fd, 9600, 0)){
-			printf("Failed to set attributes for serial fd\n");
+			printf_("Failed to set attributes for serial fd\n");
 			continue;
 		}
-		printf("Opened arduino serial port %s\n", cs(arduino_serial_path));
+		printf_("Opened arduino serial port %s\n", cs(arduino_serial_path));
 		arduino_serial_fd_path = arduino_serial_path;
 		return;
 	}
+#endif
 }
 
 void handle_hwcontrols()
@@ -1503,7 +1564,7 @@ void handle_hwcontrols()
 		static time_t last_retry_time = 0;
 		if(last_retry_time < time(0) - 5 && !arduino_serial_paths.empty()){
 			last_retry_time = time(0);
-			printf("Retrying arduino serial\n");
+			printf_("Retrying arduino serial\n");
 			try_open_arduino_serial();
 		}
 		if(arduino_serial_fd == -1){
@@ -1524,14 +1585,14 @@ void handle_hwcontrols()
 			ss_ first = f.next(":");
 			if(first == "<KEY_PRESS"){
 				int key = stoi(f.next(":"));
-				printf("<KEY_PRESS  : %i\n", key);
+				printf_("<KEY_PRESS  : %i\n", key);
 				handle_key_press(key);
 			} else if(first == "<KEY_RELEASE"){
 				int key = stoi(f.next(":"));
-				printf("<KEY_RELEASE: %i\n", key);
+				printf_("<KEY_RELEASE: %i\n", key);
 				handle_key_release(key);
 			} else if(first == "<BOOT"){
-				printf("<BOOT\n");
+				printf_("<BOOT\n");
 				arduino_set_extra_segments();
 				temp_display_album();
 				refresh_track();
@@ -1541,29 +1602,29 @@ void handle_hwcontrols()
 				ss_ mode = f.next(":");
 				if(mode == "RASPBERRY"){
 					if(current_pause_mode == PM_UNFOCUS_PAUSE){
-						printf("Leaving unfocus pause\n");
+						printf_("Leaving unfocus pause\n");
 						check_mpv_error(mpv_command_string(mpv, "pause"));
 						current_pause_mode = PM_PLAY;
 					}
 				} else {
 					if(current_pause_mode == PM_PLAY){
-						printf("Entering unfocus pause\n");
+						printf_("Entering unfocus pause\n");
 						check_mpv_error(mpv_command_string(mpv, "pause"));
 						current_pause_mode = PM_UNFOCUS_PAUSE;
 					}
 				}
 			} else if(first == "<POWERDOWN_WARNING"){
-				printf("<POWERDOWN_WARNING\n");
+				printf_("<POWERDOWN_WARNING\n");
 				save_stuff();
 			} else if(first == "<VERSION"){
-				printf("%s\n", cs(message));
+				printf_("%s\n", cs(message));
 				ss_ version = f.next("");
 				if(!tried_to_update_arduino_firmware){
 					tried_to_update_arduino_firmware = true;
 					arduino_firmware_update_if_needed(version);
 				}
 			} else {
-				printf("%s (ignored)\n", cs(message));
+				printf_("%s (ignored)\n", cs(message));
 			}
 		}
 	}
@@ -1655,7 +1716,7 @@ void eat_all_mpv_events()
 		if(event->event_id == MPV_EVENT_NONE)
 			break;
 		if(LOG_MPV)
-			printf("MPV: %s (eaten)\n", mpv_event_name(event->event_id));
+			printf_("MPV: %s (eaten)\n", mpv_event_name(event->event_id));
 	}
 }
 
@@ -1667,7 +1728,7 @@ void wait_mpv_event(int event_id, int max_ms)
 			if(event->event_id == MPV_EVENT_NONE)
 				break;
 			if(LOG_MPV)
-				printf("MPV: %s (waited over)\n", mpv_event_name(event->event_id));
+				printf_("MPV: %s (waited over)\n", mpv_event_name(event->event_id));
 			if(event->event_id == event_id)
 				return;
 		}
@@ -1677,7 +1738,7 @@ void wait_mpv_event(int event_id, int max_ms)
 
 void automated_start_play_next_track()
 {
-	printf("Automated start of next track\n");
+	printf_("Automated start of next track\n");
 
 	switch(track_progress_mode){
 	case TPM_NORMAL:
@@ -1692,13 +1753,13 @@ void automated_start_play_next_track()
 		cursor_bound_wrap(current_media_content, current_cursor);
 		current_cursor.track_name = get_track_name(current_media_content, current_cursor);
 		current_cursor.album_name = get_album_name(current_media_content, current_cursor);
-		printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+		printf_("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 		load_and_play_current_track_from_start();
 		break;
 	case TPM_ALBUM_REPEAT_TRACK:
 		current_cursor.time_pos = 0;
 		current_cursor.stream_pos = 0;
-		printf("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
+		printf_("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 		refresh_track();
 		break;
 	case TPM_NUM_MODES:
@@ -1714,7 +1775,7 @@ void do_something_instead_of_idle()
 	}
 
 	if(LOG_DEBUG)
-		printf("Trying to do something instead of idle\n");
+		printf_("Trying to do something instead of idle\n");
 
 	// If the currently playing file does not exist, and the current device does
 	// not exist, stop playback and wait until the media is available again
@@ -1742,7 +1803,7 @@ void do_something_instead_of_idle()
 	}
 
 	// Media got unmounted; do nothing and wait until media is available again
-	printf("Media got unmounted and there are no tracks available\n");
+	printf_("Media got unmounted and there are no tracks available\n");
 }
 
 void handle_mpv()
@@ -1752,7 +1813,7 @@ void handle_mpv()
 		if(event->event_id == MPV_EVENT_NONE)
 			break;
 		if(LOG_MPV)
-			printf("MPV: %s\n", mpv_event_name(event->event_id));
+			printf_("MPV: %s\n", mpv_event_name(event->event_id));
 		if(event->event_id == MPV_EVENT_SHUTDOWN){
 			do_main_loop = false;
 		}
@@ -1766,19 +1827,19 @@ void handle_mpv()
 				mpv_get_property(mpv, "stream-end", MPV_FORMAT_INT64, &stream_end);
 				current_track_stream_end = stream_end;
 				if(LOG_DEBUG){
-					printf("Got current track stream_end: %" PRId64 "\n",
+					printf_("Got current track stream_end: %" PRId64 "\n",
 							current_track_stream_end);
 				}
 			}
 			if(queued_pause){
 				queued_pause = false;
 				if(LOG_DEBUG)
-					printf("Executing queued pause\n");
+					printf_("Executing queued pause\n");
 				check_mpv_error(mpv_command_string(mpv, "pause"));
 				arduino_set_temp_text("PAUSE");
 				current_pause_mode = PM_PAUSE;
 				arduino_set_extra_segments();
-				printf("Paused.\n");
+				printf_("Paused.\n");
 			}
 		}
 	}
@@ -1801,7 +1862,7 @@ void handle_mpv()
 				int64_t stream_end = 0;
 				mpv_get_property(mpv, "stream-end", MPV_FORMAT_INT64, &stream_end);
 				current_track_stream_end = stream_end;
-				printf("Got current track stream_end: %" PRId64 "\n",
+				printf_("Got current track stream_end: %" PRId64 "\n",
 						current_track_stream_end);
 			}
 
@@ -1820,13 +1881,14 @@ void handle_mpv()
 	// reason
 	bool idle = mpv_is_idle();
 	if(idle){
+		printf_("MPV is idle\n");
 		if(mpv_last_not_idle_timestamp == 0){
 			mpv_last_not_idle_timestamp = time(0);
 		} else if(mpv_last_not_idle_timestamp > time(0) - 5){
 			// Fine enough until 5 seconds of idle
 		} else {
 			if(LOG_DEBUG)
-				printf("MPV Idled for too long; doing something\n");
+				printf_("MPV Idled for too long; doing something\n");
 			mpv_last_not_idle_timestamp = time(0);
 			do_something_instead_of_idle();
 		}
@@ -1891,13 +1953,13 @@ void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_al
 		if(ftype == FS_FILE){
 			if(!filename_supported(fname))
 				continue;
-			//printf("File: %s\n", cs(path+"/"+fname));
+			//printf_("File: %s\n", cs(path+"/"+fname));
 			char stripped[100];
 			snprintf(stripped, sizeof stripped, fname);
 			strip_file_extension(stripped);
 			root_album.tracks.push_back(Track(path+"/"+fname, stripped));
 		} else if(ftype == FS_DIR){
-			//printf("Dir: %s\n", cs(path+"/"+fname));
+			//printf_("Dir: %s\n", cs(path+"/"+fname));
 			subdirs.push_back(fname);
 		}
 	}
@@ -2006,7 +2068,7 @@ sv_<ss_> get_collection_parts()
 			if(ftype == FS_FILE){
 				continue;
 			} else if(ftype == FS_DIR){
-				//printf("Dir: %s\n", cs(path+"/"+fname));
+				//printf_("Dir: %s\n", cs(path+"/"+fname));
 				subdirs.push_back(fname);
 				// TODO: Don't add duplicates
 			}
@@ -2022,9 +2084,9 @@ sv_<ss_> get_collection_parts()
 void scan_current_mount()
 {
 	if(current_collection_part != "")
-		printf("Scanning (collection: \"%s\")\n", cs(current_collection_part));
+		printf_("Scanning (collection: \"%s\")\n", cs(current_collection_part));
 	else
-		printf("Scanning...\n");
+		printf_("Scanning...\n");
 
 	//disappeared_tracks.clear();
 	current_media_content.albums.clear();
@@ -2052,26 +2114,26 @@ void scan_current_mount()
 
 	mr_shuffle_detect_albums();
 
-	printf("Scanned %zu albums.\n", current_media_content.albums.size());
+	printf_("Scanned %zu albums.\n", current_media_content.albums.size());
 
 	current_cursor = last_succesfully_playing_cursor;
 
 	if(current_cursor.album_seq_i == 0 && current_cursor.track_seq_i == 0 &&
 			current_cursor.track_name == ""){
 		if(LOG_DEBUG)
-			printf("Starting without saved state; picking random album\n");
+			printf_("Starting without saved state; picking random album\n");
 		handle_control_random_album();
 		return;
 	}
 
 	if(!static_media_paths.empty() && current_media_content.albums.empty()){
 		// There are static media paths and there are no tracks; do nothing
-		printf("No media.\n");
+		printf_("No media.\n");
 		return;
 	}
 
 	if(!force_resolve_track(current_media_content, current_cursor)){
-		printf("Force-resolve track failed; picking random album\n");
+		printf_("Force-resolve track failed; picking random album\n");
 		handle_control_random_album();
 		return;
 	}
@@ -2084,7 +2146,7 @@ bool check_partition_exists(const ss_ &devname0)
 {
 	std::ifstream f("/proc/partitions");
 	if(!f.good()){
-		printf("Can't read /proc/partitions\n");
+		printf_("Can't read /proc/partitions\n");
 		return false;
 	}
 	ss_ proc_partitions_data = ss_((std::istreambuf_iterator<char>(f)),
@@ -2115,7 +2177,7 @@ ss_ get_device_mountpoint(const ss_ &devname0)
 {
 	std::ifstream f("/proc/mounts");
 	if(!f.good()){
-		printf("Can't read /proc/mounts\n");
+		printf_("Can't read /proc/mounts\n");
 		return "";
 	}
 	ss_ proc_mounts_data = ss_((std::istreambuf_iterator<char>(f)),
@@ -2140,12 +2202,12 @@ ss_ get_device_mountpoint(const ss_ &devname0)
 				break;
 		}
 		if(devname == devname0){
-			/*printf("is_device_mounted(): %s is mounted at %s\n",
+			/*printf_("is_device_mounted(): %s is mounted at %s\n",
 					cs(devname0), cs(mountpoint));*/
 			return mountpoint;
 		}
 	}
-	//printf("is_device_mounted(): %s is not mounted\n", cs(devname0));
+	//printf_("is_device_mounted(): %s is not mounted\n", cs(devname0));
 	return "";
 }
 
@@ -2153,9 +2215,9 @@ void handle_changed_partitions()
 {
 	if(!static_media_paths.empty()){
 		if(current_mount_path != static_media_paths[0]){
-			printf("Using static media paths:\n");
+			printf_("Using static media paths:\n");
 			for(size_t i=0; i<static_media_paths.size(); i++){
-				printf("- %s\n", cs(static_media_paths[i]));
+				printf_("- %s\n", cs(static_media_paths[i]));
 			}
 			current_mount_device = "dummy";
 			current_mount_path = static_media_paths[0];
@@ -2164,6 +2226,7 @@ void handle_changed_partitions()
 		return;
 	}
 
+#ifndef __WIN32__
 	if(current_mount_device != ""){
 		if(!check_partition_exists(current_mount_device)){
 			static time_t umount_last_failed_timestamp = 0;
@@ -2171,21 +2234,21 @@ void handle_changed_partitions()
 				// Stop flooding these dumb commands
 			} else {
 				// Unmount it if the partition doesn't exist anymore
-				printf("Device %s does not exist anymore; umounting\n",
+				printf_("Device %s does not exist anymore; umounting\n",
 						cs(current_mount_path));
 				int r = umount(current_mount_path.c_str());
 				if(r == 0){
-					printf("umount %s succesful\n", current_mount_path.c_str());
+					printf_("umount %s succesful\n", current_mount_path.c_str());
 					current_mount_device = "";
 					current_mount_path = "";
 					current_media_content.albums.clear();
 				} else {
-					printf("umount %s failed: %s\n", current_mount_path.c_str(), strerror(errno));
+					printf_("umount %s failed: %s\n", current_mount_path.c_str(), strerror(errno));
 					umount_last_failed_timestamp = time(0);
 				}
 			}
 		} else if(get_device_mountpoint(current_mount_device) == ""){
-			printf("Device %s got unmounted from %s\n", cs(current_mount_device),
+			printf_("Device %s got unmounted from %s\n", cs(current_mount_device),
 					cs(current_mount_path));
 			current_mount_device = "";
 			current_mount_path = "";
@@ -2195,14 +2258,14 @@ void handle_changed_partitions()
 
 	if(current_mount_device != ""){
 		// This can get extremely spammy; thus it is commented out
-		/*printf("Ignoring partition change because we have mounted %s at %s\n",
+		/*printf_("Ignoring partition change because we have mounted %s at %s\n",
 				cs(current_mount_device), cs(current_mount_path));*/
 		return;
 	}
 
 	std::ifstream f("/proc/partitions");
 	if(!f.good()){
-		printf("Can't read /proc/partitions\n");
+		printf_("Can't read /proc/partitions\n");
 		return;
 	}
 	ss_ proc_partitions_data = ss_((std::istreambuf_iterator<char>(f)),
@@ -2235,11 +2298,11 @@ void handle_changed_partitions()
 		}
 		if(!found)
 			continue;
-		printf("Tracked partition: %s\n", cs(devname));
+		printf_("Tracked partition: %s\n", cs(devname));
 
 		ss_ existing_mountpoint = get_device_mountpoint(devname);
 		if(existing_mountpoint != ""){
-			printf("%s is already mounted at %s; using it\n",
+			printf_("%s is already mounted at %s; using it\n",
 					cs(devname), cs(existing_mountpoint));
 			current_mount_device = devname;
 			current_mount_path = existing_mountpoint;
@@ -2250,25 +2313,28 @@ void handle_changed_partitions()
 
 		ss_ dev_path = "/dev/"+devname;
 		ss_ new_mount_path = "/tmp/__autosoitin_mnt";
-		printf("Mounting %s at %s\n", cs(dev_path), cs(new_mount_path));
+		printf_("Mounting %s at %s\n", cs(dev_path), cs(new_mount_path));
+		mkdir(cs(new_mount_path), 0777);
 		mkdir(cs(new_mount_path), 0777);
 		int r = mount(dev_path.c_str(), new_mount_path.c_str(), "vfat",
 				MS_MGC_VAL | MS_RDONLY | MS_NOEXEC | MS_NOSUID | MS_DIRSYNC |
 						MS_NODEV | MS_SYNCHRONOUS,
 				NULL);
 		if(r == 0){
-			printf("Succesfully mounted.\n");
+			printf_("Succesfully mounted.\n");
 			current_mount_device = devname;
 			current_mount_path = new_mount_path;
 
 			scan_current_mount();
 			return;
 		} else {
-			printf("Failed to mount (%s); trying next\n", strerror(errno));
+			printf_("Failed to mount (%s); trying next\n", strerror(errno));
 		}
 	}
+#endif
 }
 
+#ifndef __WIN32__
 bool partitions_changed = false;
 
 void handle_mount()
@@ -2283,7 +2349,7 @@ void handle_mount()
 
 	if(partitions_changed){
 		partitions_changed = false;
-		printf("Partitions changed\n");
+		printf_("Partitions changed\n");
 		handle_changed_partitions();
 	}
 
@@ -2337,6 +2403,11 @@ void handle_mount()
 		}
 	}
 }
+#else
+void handle_mount()
+{
+}
+#endif
 
 void handle_periodic_save()
 {
@@ -2353,14 +2424,14 @@ void handle_periodic_save()
 
 void sigint_handler(int _)
 {
-	printf("SIGINT\n");
+	printf_("SIGINT\n");
 	save_stuff();
 	do_main_loop = false;
 }
 
 void do_intro()
 {
-	printf("⌁ OVER POWERED TRACK SWITCH ⌁\n");
+	printf_("⌁ OVER POWERED TRACK SWITCH ⌁\n");
 }
 
 // First call with command line arguments, then with config arguments
@@ -2390,7 +2461,7 @@ int handle_args(int argc, char *argv[], const char *error_prefix, bool from_conf
 		switch(c)
 		{
 		case 'h':
-			printf(usagefmt, argv[0]);
+			printf_(usagefmt, argv[0]);
 			return 1;
 		case 'C':
 			config_path = c55_optarg;
@@ -2402,14 +2473,14 @@ int handle_args(int argc, char *argv[], const char *error_prefix, bool from_conf
 		case 'd':
 			{
 				Strfnd f(c55_optarg);
-				printf("Tracking:");
+				printf_("Tracking:");
 				for(;;){
 					ss_ dev = f.next(",");
 					if(dev == "") break;
-					printf(" %s", cs(dev));
+					printf_(" %s", cs(dev));
 					track_devices.push_back(dev);
 				}
-				printf("\n");
+				printf_("\n");
 			}
 			break;
 		case 'S':
@@ -2437,9 +2508,9 @@ int handle_args(int argc, char *argv[], const char *error_prefix, bool from_conf
 			break;
 		default:
 			if(error_prefix)
-				fprintf(stderr, "%s\n", error_prefix);
-			fprintf(stderr, "Invalid argument\n");
-			fprintf(stderr, usagefmt, argv[0]);
+				fprintf_(stderr, "%s\n", error_prefix);
+			fprintf_(stderr, "Invalid argument\n");
+			fprintf_(stderr, usagefmt, argv[0]);
 			return 1;
 		}
 	}
@@ -2448,28 +2519,38 @@ int handle_args(int argc, char *argv[], const char *error_prefix, bool from_conf
 
 void generate_default_paths()
 {
-	const char *home = getenv("HOME");
-	if(!home){
-		printf("$HOME not set - cannot read config\n");
+	ss_ config_dir;
+#ifdef __WIN32__
+	const char *appdata = getenv("APPDATA");
+	if(!appdata){
+		printf_("$APPDATA not set - cannot read config\n");
 		return;
 	}
+	config_dir = ss_() + appdata + "/opts";
+#else
+	const char *home = getenv("HOME");
+	if(!home){
+		printf_("$HOME not set - cannot read config\n");
+		return;
+	}
+	config_dir = ss_() + home + "/.config/opts";
+#endif
 
 	if(config_path == "__default__"){
-		config_path = ss_() + home + "/.config/opts/opts";
+		config_path = config_dir + "/opts";
 
 		if(LOG_DEBUG)
-			printf("Default config_path: \"%s\"\n", cs(config_path));
+			printf_("Default config_path: \"%s\"\n", cs(config_path));
 	}
 
 	if(saved_state_path == "__default__"){
-		ss_ config_dir = ss_() + home + "/.config/opts";
 		saved_state_path = config_dir + "/state";
 
 		if(LOG_DEBUG)
-			printf("Default saved_state_path: \"%s\"\n", cs(saved_state_path));
+			printf_("Default saved_state_path: \"%s\"\n", cs(saved_state_path));
 
 		if(mkdir_p(config_dir.c_str())){
-			printf("Warning: Failed to create directory: \"%s\"\n", cs(config_dir));
+			printf_("Warning: Failed to create directory: \"%s\"\n", cs(config_dir));
 		}
 	}
 }
@@ -2478,11 +2559,11 @@ void generate_default_paths()
 bool read_config(char *content, size_t content_max_len, sv_<char*> &argv)
 {
 	if(LOG_DEBUG)
-		printf("Loading config file from %s\n", cs(config_path));
+		printf_("Loading config file from %s\n", cs(config_path));
 	ss_ config_content;
 	if(!read_file_content(config_path, config_content)){
 		if(LOG_DEBUG || config_must_be_readable)
-			printf("Couldn't read config file \"%s\"\n", cs(config_path));
+			printf_("Couldn't read config file \"%s\"\n", cs(config_path));
 		return config_must_be_readable ? false : true;
 	}
 	// Translate ~ in config to $HOME
@@ -2518,14 +2599,16 @@ bool read_config(char *content, size_t content_max_len, sv_<char*> &argv)
 		}
 	}
 	if(current_quote){
-		printf("Warning: Config file has non-ending quote\n");
+		printf_("Warning: Config file has non-ending quote\n");
 	}
 	return true;
 }
 
 int main(int argc, char *argv[])
 {
+#ifndef __WIN32__
 	signal(SIGINT, sigint_handler);
+#endif
 	startup_timestamp = time(0);
 	srand(time(0));
 
@@ -2542,9 +2625,9 @@ int main(int argc, char *argv[])
 	}
 
 	if(LOG_DEBUG){
-		printf("Config args:\n");
+		printf_("Config args:\n");
 		for(char *a : config_argv){
-			printf("  %s\n", a);
+			printf_("  %s\n", a);
 		}
 	}
 
@@ -2554,13 +2637,13 @@ int main(int argc, char *argv[])
 	}
 
 	if(track_devices.empty() && static_media_paths.empty()){
-		printf("Use -d or -m\n");
+		printf_("Use -d or -m\n");
 		return 1;
 	}
 
 	if(arduino_serial_debug_mode != "off" && arduino_serial_debug_mode != "raw" &&
 			arduino_serial_debug_mode != "fancy"){
-		printf("Invalid arduino serial debug mode (-D) (%s)\n",
+		printf_("Invalid arduino serial debug mode (-D) (%s)\n",
 				cs(arduino_serial_debug_mode));
 		return 1;
 	}
@@ -2571,12 +2654,14 @@ int main(int argc, char *argv[])
 
 	try_open_arduino_serial();
 
+#ifndef __WIN32__
 	partitions_watch.reset(createFileWatch(
 			IN_MOVED_TO | IN_CREATE | IN_MOVED_FROM | IN_DELETE | IN_ATTRIB));
+#endif
 
     mpv = mpv_create();
     if (!mpv) {
-        printf("mpv_create() failed");
+        printf_("mpv_create() failed");
         return 1;
     }
     
@@ -2590,7 +2675,7 @@ int main(int argc, char *argv[])
 	arduino_set_text("OK");
 
 	if(LOG_DEBUG)
-		printf("Doing initial partition scan\n");
+		printf_("Doing initial partition scan\n");
 	handle_changed_partitions();
 
 	handle_changed_track_progress_mode();

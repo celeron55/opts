@@ -2,9 +2,18 @@
 #include <limits.h>     /* PATH_MAX */
 #include <sys/stat.h>   /* mkdir(2) */
 #include <errno.h>
+#ifdef __WIN32__
+#  include "Shlobj.h"
+#endif
 
 int mkdir_p(const char *path)
 {
+#ifdef __WIN32__
+	int r = SHCreateDirectoryEx(NULL, path, NULL);
+	if (r != ERROR_SUCCESS && r != ERROR_ALREADY_EXISTS)
+		return -1;
+	return 0;
+#else
     /* Adapted from http://stackoverflow.com/a/2336245/119527 */
     const size_t len = strlen(path);
     char _path[PATH_MAX];
@@ -40,4 +49,5 @@ int mkdir_p(const char *path)
     }   
 
     return 0;
+#endif
 }

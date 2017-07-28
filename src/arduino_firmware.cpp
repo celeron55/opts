@@ -4,6 +4,14 @@
 #include "stuff2.hpp"
 #include <fstream>
 #include <stdio.h>
+#ifdef __WIN32__
+#  include <time.h>
+#  include <windows.h>
+static void sleep(int s) { Sleep(s * 1000); }
+static void usleep(int us) { Sleep(us / 1000); }
+#  include "Shlwapi.h"
+#  define strcasestr StrStrI
+#endif
 
 void arduino_firmware_update_if_needed(const ss_ &current_version)
 {

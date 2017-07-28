@@ -1,6 +1,12 @@
 #pragma once
+#include "types.hpp"
 
-#include <dirent.h>
+#ifdef __WIN32__
+#  include "Winsock2.h"
+#  include <windows.h>
+#else
+#  include <dirent.h>
+#endif
 #define MAX_PATH_LEN 4096
 
 #define FS_FILE 0
@@ -14,12 +20,17 @@ void strip_filename(char *path);
 
 struct DirLister
 {
+#ifdef __WIN32__
+	HANDLE hFind;
+	WIN32_FIND_DATA FindFileData;
+#else
 	DIR *dir = nullptr;
+#endif
 
 	DirLister(const char *path);
 	~DirLister();
 
-	bool valid(){ return dir != nullptr; }
+	bool valid();
 	bool get_next(int *type, char *name, unsigned int maxlen);
 };
 
