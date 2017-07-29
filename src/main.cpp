@@ -2422,12 +2422,25 @@ void handle_periodic_save()
 	save_stuff();
 }
 
+#ifdef __WIN32__
+BOOL WINAPI windowsConsoleCtrlHandler(DWORD signal)
+{
+	if(signal == CTRL_C_EVENT){
+		printf_("CTRL+C\n");
+		save_stuff();
+		do_main_loop = false;
+		return TRUE;
+	}
+	return FALSE;
+}
+#else
 void sigint_handler(int _)
 {
 	printf_("SIGINT\n");
 	save_stuff();
 	do_main_loop = false;
 }
+#endif
 
 void do_intro()
 {
@@ -2606,7 +2619,9 @@ bool read_config(char *content, size_t content_max_len, sv_<char*> &argv)
 
 int main(int argc, char *argv[])
 {
-#ifndef __WIN32__
+#ifdef __WIN32__
+	SetConsoleCtrlHandler(windowsConsoleCtrlHandler, TRUE);
+#else
 	signal(SIGINT, sigint_handler);
 #endif
 	startup_timestamp = time(0);
