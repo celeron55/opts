@@ -159,15 +159,15 @@ sv_<ss_> get_collection_parts()
 			char fname[PATH_MAX];
 			if(!dl.get_next(&ftype, fname, PATH_MAX))
 				break;
+			if(ftype != FS_DIR)
+				continue;
 			if(fname[0] == '.')
 				continue;
-			if(ftype == FS_FILE){
+			if(ss_(fname) == "FW")
 				continue;
-			} else if(ftype == FS_DIR){
-				//printf_("Dir: %s\n", cs(path+"/"+fname));
-				subdirs.push_back(fname);
-				// TODO: Don't add duplicates
-			}
+			//printf_("Dir: %s\n", cs(path+"/"+fname));
+			subdirs.push_back(fname);
+			// TODO: Don't add duplicates
 		}
 	}
 

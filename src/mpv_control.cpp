@@ -366,7 +366,8 @@ void handle_mpv()
 	// reason
 	bool idle = mpv_is_idle();
 	if(idle){
-		printf_("MPV is idle\n");
+		if(LOG_DEBUG)
+			printf_("MPV is idle\n");
 		if(mpv_last_not_idle_timestamp == 0){
 			mpv_last_not_idle_timestamp = time(0);
 		} else if(mpv_last_not_idle_timestamp > time(0) - 5){
