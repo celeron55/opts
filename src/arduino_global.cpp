@@ -389,6 +389,8 @@ void handle_display()
 		arduino_set_text(text_to_show);
 		if(current_output_message_next_shown_piece == 0)
 			display_update_timestamp = time(0) + 1; // Ensure that this is shown for more than 1s
+		else
+			display_update_timestamp = time(0);
 		current_displayed_track_name = ""; // Restart default display
 		current_displayed_track_name_next_shown_piece = 0; // Restart default display
 		return; // Showing message
@@ -471,15 +473,11 @@ void hwcontrol_input_digit(int input_digit)
 
 	if(input_digit == 3){
 		command_next_collection_part(-1);
-		// TODO: Add a temp text display prioritization system
-		sleep(1); // Wait while directory is shown on screen
 		return;
 	}
 
 	if(input_digit == 4){
 		command_next_collection_part(1);
-		// TODO: Add a temp text display prioritization system
-		sleep(1); // Wait while directory is shown on screen
 		return;
 	}
 

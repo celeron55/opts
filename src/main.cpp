@@ -354,7 +354,6 @@ void temp_display_album()
 	if(current_media_content.albums.empty())
 		return;
 
-	ui_flush_display();
 	ui_output_queue::push_message(get_album_name(current_media_content, current_cursor),
 			squeeze(get_album_name(current_media_content, current_cursor),
 			            arduino_display_width * 3, 0, arduino_display_width));

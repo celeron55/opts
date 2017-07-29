@@ -81,7 +81,6 @@ void force_start_at_cursor()
 		mpv_set_option_string(mpv, "start", "#1");
 	}
 
-	void eat_all_mpv_events();
 	eat_all_mpv_events();
 
 	const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
