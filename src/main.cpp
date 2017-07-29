@@ -505,7 +505,7 @@ void handle_control_track_number(int track_n)
 		arduino_set_temp_text("PASS");
 		return;
 	}
-	int track_seq_i = track_n - 1;
+	int track_media_index = track_n - 1;
 
 	auto &cursor = current_cursor;
 	auto &mc = current_media_content;
@@ -515,13 +515,13 @@ void handle_control_track_number(int track_n)
 		return;
 	}
 	const Album &album = mc.albums[cursor.album_i(mc)];
-	if(cursor.track_seq_i >= (int)album.tracks.size()){
-		printf_("handle_control_track_number(): track_seq_i %i doesn't exist\n", track_seq_i);
+	if(track_media_index >= (int)album.tracks.size()){
+		printf_("handle_control_track_number(): track_media_index %i doesn't exist\n", track_media_index);
 		arduino_set_temp_text("PASS T");
 		return;
 	}
 
-	current_cursor.track_seq_i = track_seq_i;
+	current_cursor.select_track_using_media_index(mc, track_media_index);
 	start_at_relative_track(0, 0);
 }
 
@@ -532,17 +532,16 @@ void handle_control_album_number(int album_n)
 		arduino_set_temp_text("PASS");
 		return;
 	}
-	int album_seq_i = album_n - 1;
+	int album_media_index = album_n - 1;
 
-	auto &cursor = current_cursor;
 	auto &mc = current_media_content;
-	if(cursor.album_seq_i >= (int)mc.albums.size()){
-		printf_("handle_control_album_number(): album_seq_i %i doesn't exist\n", album_seq_i);
+	if(album_media_index >= (int)mc.albums.size()){
+		printf_("handle_control_album_number(): album_media_index %i doesn't exist\n", album_media_index);
 		arduino_set_temp_text("PASS");
 		return;
 	}
 
-	current_cursor.album_seq_i = album_seq_i;
+	current_cursor.select_album_using_media_index(mc, album_media_index);
 	current_cursor.track_seq_i = 0;
 	start_at_relative_track(0, 0, true);
 }
@@ -1506,13 +1505,23 @@ bool filename_supported(const ss_ &name)
 	return supported_file_extensions.count(ext);
 }
 
+static bool is_default_root_name(const ss_ &name)
+{
+	if(name == "root")
+		return true;
+	if(name.size() >= 5 && name.substr(0, 5) == "root_")
+		return true;
+	return false;
+}
+
 void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_albums,
 		Album *parent_dir_album=NULL)
 {
 	DirLister dl(path.c_str());
 
 	Album root_album;
-	if(root_name.size() <= 7 && parent_dir_album){
+	if(root_name.size() <= 7 && parent_dir_album &&
+			!is_default_root_name(parent_dir_album->name)){
 		root_album.name = root_name+" | "+parent_dir_album->name;
 	} else {
 		root_album.name = root_name;
@@ -1675,7 +1684,8 @@ void scan_current_mount()
 	if(!static_media_paths.empty()){
 		int n = 1;
 		for(const ss_ &path : static_media_paths){
-			scan_directory("root_"+itos(n++), path+scan_midfix, current_media_content.albums);
+			ss_ root_name = static_media_paths.size() == 1 ? "root" : "root_"+itos(n++);
+			scan_directory(root_name, path+scan_midfix, current_media_content.albums);
 		}
 	} else {
 		scan_directory("root", current_mount_path+scan_midfix, current_media_content.albums);

@@ -47,6 +47,7 @@ public:
 			return album_seq_i;
 		}
 	}
+
 	int track_i(const MediaContent &mc) const {
 		if(mc.albums.empty())
 			return 0;
@@ -73,61 +74,120 @@ public:
 		}
 	}
 
+	void set_album_seq_i(const MediaContent &mc, int new_album_seq_i)
+	{
+		if(new_album_seq_i < 0){
+			printf_("WARNING: new_album_seq_i < 0\n");
+			album_seq_i = 0;
+		} else if(new_album_seq_i >= (int)mc.albums.size()){
+			printf_("WARNING: new_album_seq_i >= mc.albums.size()\n");
+			album_seq_i = mc.albums.size() - 1;
+		} else {
+			album_seq_i = new_album_seq_i;
+		}
+	}
+
+	void set_track_seq_i(const MediaContent &mc, int new_track_seq_i)
+	{
+		if(mc.albums.empty()){
+			printf_("WARNING: set_track_seq_i: No albums\n");
+			return;
+		}
+		const Album &album = mc.albums[album_i(mc)];
+		if(new_track_seq_i < 0){
+			printf_("WARNING: new_track_seq_i < 0\n");
+			track_seq_i = 0;
+		} else if(new_track_seq_i >= (int)album.tracks.size()){
+			printf_("WARNING: new_track_seq_i >= album.tracks.size()\n");
+			track_seq_i = album.tracks.size() - 1;
+		} else {
+			track_seq_i = new_track_seq_i;
+		}
+	}
+
+	void select_album_using_media_index(const MediaContent &mc, int album_index_in_media)
+	{
+		if(mc.albums.empty())
+			return;
+		switch(track_progress_mode){
+		case TPM_SHUFFLE_ALL: {
+			for(int ai1=0; ai1<(int)mc.albums.size(); ai1++){
+				if((int)mc.shuffled_album_order[ai1] == album_index_in_media){
+					set_album_seq_i(mc, ai1);
+					return;
+				}
+			}
+			return;
+		}
+		case TPM_MR_SHUFFLE: {
+			for(int ai1=0; ai1<(int)mc.albums.size(); ai1++){
+				if((int)mc.mr_shuffled_album_order[ai1] == album_index_in_media){
+					set_album_seq_i(mc, ai1);
+					return;
+				}
+			}
+			return;
+		}
+		case TPM_NORMAL:
+		case TPM_ALBUM_REPEAT:
+		case TPM_ALBUM_REPEAT_TRACK:
+		case TPM_SHUFFLE_TRACKS:
+		case TPM_NUM_MODES: {
+			set_album_seq_i(mc, album_index_in_media);
+			return;
+		}
+		}
+	}
+
+	void select_track_using_media_index(const MediaContent &mc, int track_index_in_media)
+	{
+		if(mc.albums.empty())
+			return;
+		switch(track_progress_mode){
+		case TPM_SHUFFLE_TRACKS:
+		case TPM_SHUFFLE_ALL: {
+			const Album &album = mc.albums[album_i(mc)];
+			album.ensure_shuffled_track_order_exists();
+			for(int ti1=0; ti1<(int)album.tracks.size(); ti1++){
+				if((int)album.shuffled_track_order[ti1] == track_index_in_media){
+					set_track_seq_i(mc, ti1);
+					return;
+				}
+			}
+		}
+		case TPM_MR_SHUFFLE: {
+			const Album &album = mc.albums[album_i(mc)];
+			if(album.mr_shuffle_tracks){
+				album.ensure_shuffled_track_order_exists();
+				for(int ti1=0; ti1<(int)album.tracks.size(); ti1++){
+					if((int)album.shuffled_track_order[ti1] == track_index_in_media){
+						set_track_seq_i(mc, ti1);
+						return;
+					}
+				}
+			} else {
+				set_track_seq_i(mc, track_index_in_media);
+				return;
+			}
+		}
+		case TPM_NORMAL:
+		case TPM_ALBUM_REPEAT:
+		case TPM_ALBUM_REPEAT_TRACK:
+		case TPM_NUM_MODES: {
+			set_track_seq_i(mc, track_index_in_media);
+			return;
+		}
+		}
+	}
+
 	void set_track_progress_mode(const MediaContent &mc, TrackProgressMode new_tpm){
 		if(new_tpm == track_progress_mode)
 			return;
-		if((new_tpm == TPM_SHUFFLE_ALL || new_tpm == TPM_SHUFFLE_TRACKS)
-				&& !mc.albums.empty()){
-			// Resolve into shuffled indexing
-			const Album &album = mc.albums[album_seq_i];
-			if(album.shuffled_track_order.size() != album.tracks.size())
-				create_shuffled_order(album.shuffled_track_order, album.tracks.size());
-			for(int ti1=0; ti1<(int)album.tracks.size(); ti1++){
-				if((int)album.shuffled_track_order[ti1] == track_seq_i){
-					track_seq_i = ti1;
-					break;
-				}
-			}
-			if(new_tpm == TPM_SHUFFLE_ALL){
-				for(int ai1=0; ai1<(int)mc.albums.size(); ai1++){
-					if((int)mc.shuffled_album_order[ai1] == album_seq_i){
-						album_seq_i = ai1;
-						break;
-					}
-				}
-			}
-		}
-		if((new_tpm == TPM_MR_SHUFFLE) && !mc.albums.empty()){
-			// Resolve into shuffled indexing
-			const Album &album = mc.albums[album_seq_i];
-			if(album.shuffled_track_order.size() != album.tracks.size())
-				create_shuffled_order(album.shuffled_track_order, album.tracks.size());
-			for(int ti1=0; ti1<(int)album.tracks.size(); ti1++){
-				if((int)album.shuffled_track_order[ti1] == track_seq_i){
-					track_seq_i = ti1;
-					break;
-				}
-			}
-			for(int ai1=0; ai1<(int)mc.albums.size(); ai1++){
-				if((int)mc.mr_shuffled_album_order[ai1] == album_seq_i){
-					album_seq_i = ai1;
-					break;
-				}
-			}
-		}
-		if(track_progress_mode == TPM_SHUFFLE_ALL ||
-				track_progress_mode == TPM_SHUFFLE_TRACKS ||
-				track_progress_mode == TPM_MR_SHUFFLE){
-			// Resolve back from shuffled indexing
-			int new_album_seq_i = album_i(mc);
-			int new_track_seq_i = track_i(mc);
-			if(track_progress_mode == TPM_SHUFFLE_ALL ||
-					track_progress_mode == TPM_MR_SHUFFLE){
-				album_seq_i = new_album_seq_i;
-			}
-			track_seq_i = new_track_seq_i;
-		}
+		int album_index_in_media = album_i(mc);
+		int track_index_in_media = track_i(mc);
 		track_progress_mode = new_tpm;
+		select_album_using_media_index(mc, album_index_in_media);
+		select_track_using_media_index(mc, track_index_in_media);
 	}
 };
 

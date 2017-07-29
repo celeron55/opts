@@ -1,4 +1,5 @@
 #pragma once
+#include "stuff2.hpp"
 
 struct Track
 {
@@ -19,6 +20,11 @@ struct Album
 	sv_<Track> tracks;
 	mutable sv_<size_t> shuffled_track_order;
 	bool mr_shuffle_tracks = false;
+
+	void ensure_shuffled_track_order_exists() const {
+		if(shuffled_track_order.size() != tracks.size())
+			create_shuffled_order(shuffled_track_order, tracks.size());
+	}
 };
 
 struct MediaContent
