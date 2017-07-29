@@ -315,7 +315,8 @@ void update_and_show_default_display()
 		// Temporarily display album and track number until key isn't pressed.
 		auto &mc = current_media_content;
 		ss_ s = itos(current_cursor.album_i(mc)+1)+"-"+itos(current_cursor.track_i(mc)+1);
-		ui_output_queue::push_message(s);
+		arduino_set_text(s);
+		return;
 	}
 
 	if(current_media_content.albums.empty()){
@@ -358,7 +359,7 @@ void handle_display()
 	if(display_update_timestamp > time(0) - 1)
 		return;
 
-	// Loop to find something to show
+	// Loop to find a message to show
 	for(;;){
 		ui_output_queue::Message m = ui_output_queue::get_message();
 		if(m.short_text == "")
@@ -386,7 +387,8 @@ void handle_display()
 				current_output_message_next_shown_piece];
 		current_output_message_next_shown_piece++;
 		arduino_set_text(text_to_show);
-		display_update_timestamp = time(0);
+		if(current_output_message_next_shown_piece == 0)
+			display_update_timestamp = time(0) + 1; // Ensure that this is shown for more than 1s
 		current_displayed_track_name = ""; // Restart default display
 		current_displayed_track_name_next_shown_piece = 0; // Restart default display
 		return; // Showing message
