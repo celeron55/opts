@@ -4,6 +4,7 @@
 
 extern mpv_handle *mpv;
 extern sv_<ss_> arduino_serial_paths;
+extern sv_<ss_> track_devices;
 extern int arduino_display_width;
 extern bool minimize_display_updates;
 extern time_t startup_timestamp;

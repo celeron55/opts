@@ -12,6 +12,7 @@
 #include "terminal.hpp"
 #include "mpv_control.hpp"
 #include "ui_output_queue.hpp"
+#include "stuff.hpp"
 #include "../common/common.hpp"
 #include <mpv/client.h>
 #ifdef __WIN32__
