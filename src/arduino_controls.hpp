@@ -12,6 +12,11 @@ static ss_ truncate(const ss_ &s, size_t len)
 	return s.substr(0, len);
 }
 
+static bool is_spacing(char c)
+{
+	return c == ' ' || c == '_';
+}
+
 static sv_<ss_> split_string_to_clean_ui_pieces(const ss_ &s, size_t piece_len)
 {
 	sv_<ss_> result;
@@ -38,9 +43,9 @@ static sv_<ss_> split_string_to_clean_ui_pieces(const ss_ &s, size_t piece_len)
 		}
 		size_t end_at = start_from_instead + piece_len;
 		if(s.size() > end_at + 2 && end_at >= 3){
-			if(s[end_at-2] == ' ' && s[end_at-1] != ' ' && s[end_at] != ' ' && (s[end_at+1] == ' ' || s[end_at+2] == ' ')){
+			if(is_spacing(s[end_at-2]) && !is_spacing(s[end_at-1]) && !is_spacing(s[end_at]) && (is_spacing(s[end_at+1]) || is_spacing(s[end_at+2]))){
 				end_at = end_at - 1;
-			} else if(s[end_at-3] == ' ' && s[end_at-2] != ' ' && s[end_at-1] != ' ' && s[end_at] != ' ' && (s[end_at+1] == ' ' || s[end_at+2] == ' ')){
+			} else if(is_spacing(s[end_at-3]) && !is_spacing(s[end_at-2]) && !is_spacing(s[end_at-1]) && !is_spacing(s[end_at]) && (is_spacing(s[end_at+1]) || is_spacing(s[end_at+2]))){
 				end_at = end_at - 2;
 			}
 		}
