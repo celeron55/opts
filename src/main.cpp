@@ -16,9 +16,9 @@
 #include "library.hpp"
 #include "play_cursor.hpp"
 #include "arduino_global.hpp"
-#include "arduino_semiglobal.hpp"
 #include "media_scan.hpp"
 #include "mpv_control.hpp"
+#include "ui_output_queue.hpp"
 #include "../common/common.hpp"
 #include <mpv/client.h>
 #include <fstream>
@@ -176,6 +176,8 @@ void load_stuff()
 
 void command_playpause()
 {
+	ui_flush_display();
+
 	bool idle = mpv_is_idle();
 
 	if(!idle){
@@ -193,9 +195,9 @@ void command_playpause()
 		current_cursor.current_pause_mode = was_pause ? PM_PLAY : PM_PAUSE; // Invert
 
 		if(!was_pause){
-			arduino_set_temp_text("PAUSE");
+			ui_output_queue::push_message("PAUSE");
 		} else {
-			arduino_set_temp_text("RESUME");
+			ui_output_queue::push_message("RESUME");
 		}
 		void arduino_set_extra_segments();
 		arduino_set_extra_segments();
@@ -207,29 +209,42 @@ void command_playpause()
 
 void command_next()
 {
+	ui_flush_display();
 	start_at_relative_track(0, 1);
 }
 
 void command_prev()
 {
+	ui_flush_display();
 	start_at_relative_track(0, -1);
 }
 
 void command_nextalbum()
 {
+	ui_flush_display();
 	start_at_relative_track(1, 0);
 }
 
 void command_prevalbum()
 {
+	ui_flush_display();
 	start_at_relative_track(-1, 0);
+}
+
+// Call this before ui_output_queue::push_message or track change to get
+// immediate display response
+void ui_flush_display()
+{
+	ui_output_queue::unprioritize_queue();
+	display_update_timestamp = 0;
 }
 
 void change_track_progress_mode(TrackProgressMode track_progress_mode)
 {
 	printf_("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
 
-	arduino_set_temp_text(tpm_to_string(track_progress_mode));
+	ui_flush_display();
+	ui_output_queue::push_message(tpm_to_string(track_progress_mode));
 
 	current_cursor.set_track_progress_mode(current_media_content, track_progress_mode);
 
@@ -260,7 +275,7 @@ void command_track_number(int track_n)
 {
 	if(track_n < 1){
 		printf_("command_track_number(): track_n = %i < 1\n", track_n);
-		arduino_set_temp_text("PASS");
+		ui_output_queue::push_message("PASS");
 		return;
 	}
 	int track_media_index = track_n - 1;
@@ -269,13 +284,13 @@ void command_track_number(int track_n)
 	auto &mc = current_media_content;
 	if(cursor.album_seq_i >= (int)mc.albums.size()){
 		printf_("command_track_number(): album_seq_i %i doesn't exist\n", cursor.album_seq_i);
-		arduino_set_temp_text("PASS A");
+		ui_output_queue::push_message("PASS A");
 		return;
 	}
 	const Album &album = mc.albums[cursor.album_i(mc)];
 	if(track_media_index >= (int)album.tracks.size()){
 		printf_("command_track_number(): track_media_index %i doesn't exist\n", track_media_index);
-		arduino_set_temp_text("PASS T");
+		ui_output_queue::push_message("PASS T");
 		return;
 	}
 
@@ -287,7 +302,7 @@ void command_album_number(int album_n)
 {
 	if(album_n < 1){
 		printf_("command_album_number(): album_n = %i < 1\n", album_n);
-		arduino_set_temp_text("PASS");
+		ui_output_queue::push_message("PASS");
 		return;
 	}
 	int album_media_index = album_n - 1;
@@ -295,7 +310,7 @@ void command_album_number(int album_n)
 	auto &mc = current_media_content;
 	if(album_media_index >= (int)mc.albums.size()){
 		printf_("command_album_number(): album_media_index %i doesn't exist\n", album_media_index);
-		arduino_set_temp_text("PASS");
+		ui_output_queue::push_message("PASS");
 		return;
 	}
 
@@ -322,18 +337,27 @@ void command_next_collection_part(int dir)
 	if((size_t)current_collection_part_i >= collection_parts.size()){
 		set_collection_part("");
 		// Show part
-		arduino_set_temp_text("- All -");
-		// Delay track scroll for one second
-		display_update_timestamp = time(0) + 1;
+		ui_flush_display();
+		ui_output_queue::push_message("- All -");
 	} else {
 		if((size_t)current_collection_part_i < collection_parts.size())
 			current_collection_part = collection_parts[current_collection_part_i];
 		set_collection_part(current_collection_part);
 		// Show part
-		arduino_set_temp_text(squeeze(current_collection_part, arduino_display_width));
-		// Delay track scroll for one second
-		display_update_timestamp = time(0) + 1;
+		ui_flush_display();
+		ui_output_queue::push_message(squeeze(current_collection_part, arduino_display_width));
 	}
+}
+
+void temp_display_album()
+{
+	if(current_media_content.albums.empty())
+		return;
+
+	ui_flush_display();
+	ui_output_queue::push_message(get_album_name(current_media_content, current_cursor),
+			squeeze(get_album_name(current_media_content, current_cursor),
+			            arduino_display_width * 3, 0, arduino_display_width));
 }
 
 void ui_show_changed_album()
@@ -389,6 +413,7 @@ void command_search(const ss_ &searchstring)
 
 void command_random_album()
 {
+	ui_flush_display();
 	if(current_media_content.albums.empty()){
 		printf_("Picking random album when there is no media -> recovery mode: "
 				"resetting and saving play cursor\n");

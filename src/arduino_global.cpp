@@ -1,5 +1,6 @@
 #include "arduino_controls.hpp"
-#include "arduino_semiglobal.hpp"
+#include "library.hpp"
+#include "play_cursor.hpp"
 #include "arduino_global.hpp"
 #include "arduino_firmware.hpp"
 #include "command_accumulator.hpp"
@@ -10,6 +11,8 @@
 #include "sleep.hpp"
 #include "terminal.hpp"
 #include "mpv_control.hpp"
+#include "ui_output_queue.hpp"
+#include "../common/common.hpp"
 #include <mpv/client.h>
 
 int arduino_serial_fd = -1;
@@ -24,8 +27,39 @@ time_t stateful_input_mode_active_timestamp = 0;
 CommandAccumulator<10> stateful_input_accu;
 
 time_t display_update_timestamp = 0;
-size_t display_next_startpos = 0;
-ss_ display_last_shown_track_name;
+
+void arduino_set_extra_segments()
+{
+	uint8_t extra_segment_flags = 0;
+	switch(current_cursor.track_progress_mode){
+	case TPM_NORMAL:
+		break;
+	case TPM_ALBUM_REPEAT:
+		extra_segment_flags |= (1<<DISPLAY_FLAG_REPEAT);
+		break;
+	case TPM_ALBUM_REPEAT_TRACK:
+		extra_segment_flags |= (1<<DISPLAY_FLAG_REPEAT) | (1<<DISPLAY_FLAG_REPEAT_ONE);
+		break;
+	case TPM_SHUFFLE_ALL:
+		extra_segment_flags |= (1<<DISPLAY_FLAG_SHUFFLE);
+		break;
+	case TPM_SHUFFLE_TRACKS:
+		extra_segment_flags |= (1<<DISPLAY_FLAG_SHUFFLE) | (1<<DISPLAY_FLAG_REPEAT_ONE);
+		break;
+	case TPM_SMART_TRACK_SHUFFLE:
+	case TPM_SMART_ALBUM_SHUFFLE:
+	case TPM_MR_SHUFFLE:
+		extra_segment_flags |= (1<<DISPLAY_FLAG_SHUFFLE) | (1<<DISPLAY_FLAG_REPEAT) |
+				(1<<DISPLAY_FLAG_REPEAT_ONE);
+		break;
+	case TPM_NUM_MODES:
+		break;
+	}
+	if(current_cursor.current_pause_mode == PM_PAUSE){
+		extra_segment_flags |= (1<<DISPLAY_FLAG_PAUSE);
+	}
+	arduino_serial_write(">EXTRA_SEGMENTS:"+itos(extra_segment_flags)+"\r\n");
+}
 
 void handle_key_press(int key)
 {
@@ -245,7 +279,11 @@ void display_stateful_input()
 	}
 }
 
-void update_display()
+ss_ current_displayed_track_name;
+sv_<ss_> current_displayed_track_name_pieces;
+size_t current_displayed_track_name_next_shown_piece = 0;
+
+void update_and_show_default_display()
 {
 	display_update_timestamp = time(0);
 
@@ -261,7 +299,7 @@ void update_display()
 		// Temporarily display album and track number until key isn't pressed.
 		auto &mc = current_media_content;
 		ss_ s = itos(current_cursor.album_i(mc)+1)+"-"+itos(current_cursor.track_i(mc)+1);
-		arduino_set_temp_text(s);
+		ui_output_queue::push_message(s);
 	}
 
 	if(current_media_content.albums.empty()){
@@ -270,29 +308,75 @@ void update_display()
 	}
 
 	ss_ track_name = get_track_name(current_media_content, current_cursor);
-	if(minimize_display_updates && track_name == display_last_shown_track_name)
+	if(minimize_display_updates && track_name == current_displayed_track_name)
 		return;
-	if(track_name != display_last_shown_track_name){
-		display_last_shown_track_name = track_name;
-		display_next_startpos = 0;
+	if(track_name != current_displayed_track_name){
+		current_displayed_track_name = track_name;
+		current_displayed_track_name_pieces = toupper(split_string_to_clean_ui_pieces(
+				track_name, arduino_display_width));
+		current_displayed_track_name_next_shown_piece = 0;
 	}
-	ss_ squeezed = squeeze(track_name, arduino_display_width * 2, display_next_startpos);
-	if(squeezed == ""){
-		display_next_startpos = 0;
-		squeezed = squeeze(track_name, arduino_display_width * 2, display_next_startpos);
+	if(current_displayed_track_name_next_shown_piece >=
+			current_displayed_track_name_pieces.size()){
+		// Full track name shown. Get next one.
+		current_displayed_track_name_next_shown_piece = 0;
+		// Show separator
+		arduino_set_text(" - - -  ");
+		display_update_timestamp = time(0);
+		return; // Showing empty screen
 	}
-	if((int)squeezed.size() >= arduino_display_width)
-		squeezed = squeeze(squeezed, arduino_display_width * 2);
-	arduino_set_text(squeezed);
+	ss_ text_to_show = current_displayed_track_name_pieces[
+			current_displayed_track_name_next_shown_piece];
+	current_displayed_track_name_next_shown_piece++;
+	arduino_set_text(text_to_show);
+	display_update_timestamp = time(0);
+	return; // Showing message
 }
+
+ss_ current_output_message;
+sv_<ss_> current_output_message_pieces;
+size_t current_output_message_next_shown_piece = 0;
 
 void handle_display()
 {
 	if(display_update_timestamp > time(0) - 1)
 		return;
-	update_display();
-	if(!minimize_display_updates)
-		display_next_startpos += arduino_display_width;
+
+	// Loop to find something to show
+	for(;;){
+		ui_output_queue::Message m = ui_output_queue::get_message();
+		if(m.short_text == "")
+			break; // No messages
+		if(m.short_text != current_output_message){
+			current_output_message = m.short_text;
+			current_output_message_pieces = toupper(split_string_to_clean_ui_pieces(
+					m.short_text, arduino_display_width));
+			current_output_message_next_shown_piece = 0;
+		}
+		if(current_output_message_next_shown_piece >=
+				current_output_message_pieces.size()){
+			// Full message shown. Get next one.
+			current_output_message = "";
+			current_output_message_next_shown_piece = 0;
+			ui_output_queue::pop_message();
+			// But meanwhile, show an empty screen to separate messages
+			arduino_set_text(" - - -  ");
+			display_update_timestamp = time(0);
+			current_displayed_track_name = ""; // Restart default display
+			current_displayed_track_name_next_shown_piece = 0; // Restart default display
+			return; // Showing empty screen
+		}
+		ss_ text_to_show = current_output_message_pieces[
+				current_output_message_next_shown_piece];
+		current_output_message_next_shown_piece++;
+		arduino_set_text(text_to_show);
+		display_update_timestamp = time(0);
+		current_displayed_track_name = ""; // Restart default display
+		current_displayed_track_name_next_shown_piece = 0; // Restart default display
+		return; // Showing message
+	}
+
+	update_and_show_default_display();
 }
 
 void stateful_input_mode_select()
@@ -302,7 +386,7 @@ void stateful_input_mode_select()
 	else
 		stateful_input_mode = (StatefulInputMode)0;
 
-	update_display();
+	update_and_show_default_display();
 }
 
 void stateful_input_mode_input(char input_char)
@@ -329,7 +413,7 @@ void stateful_input_mode_input(char input_char)
 			break;
 		}
 	}
-	update_display();
+	update_and_show_default_display();
 }
 
 void stateful_input_enter()
@@ -341,7 +425,7 @@ void stateful_input_cancel()
 {
 	stateful_input_accu.reset();
 	stateful_input_mode = SIM_NONE;
-	update_display();
+	update_and_show_default_display();
 }
 
 void update_stateful_input()
@@ -382,5 +466,5 @@ void hwcontrol_input_digit(int input_digit)
 	}
 
 	// Album and track number will be displayed
-	update_display();
+	update_and_show_default_display();
 }

@@ -17,6 +17,8 @@ extern set_<ss_> enabled_log_sources;
 #define LOG_DEBUG enabled_log_sources.count("debug")
 
 void save_stuff();
+void temp_display_album();
+void ui_flush_display();
 void ui_show_changed_album();
 
 void command_playpause();

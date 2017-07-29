@@ -12,6 +12,54 @@ static ss_ truncate(const ss_ &s, size_t len)
 	return s.substr(0, len);
 }
 
+static sv_<ss_> split_string_to_clean_ui_pieces(const ss_ &s, size_t piece_len)
+{
+	sv_<ss_> result;
+	size_t start_from = 0;
+	for(;;){
+		if(start_from >= s.size())
+			break;
+		size_t start_from_instead = start_from;
+		for(size_t i=start_from; i<s.size(); i++){
+			if((s[i] < 'a' || s[i] > 'z') && (s[i] < 'A' || s[i] > 'Z') &&
+					(s[i] < '0' || s[i] > '9')){
+				start_from_instead = i + 1;
+				continue;
+			}
+			break;
+		}
+		if(start_from_instead >= s.size()){
+			result.push_back(s.substr(start_from));
+			break;
+		}
+		if(start_from_instead >= s.size() - piece_len){
+			result.push_back(s.substr(start_from_instead));
+			break;
+		}
+		size_t end_at = start_from_instead + piece_len;
+		if(s.size() > end_at + 2 && end_at >= 3){
+			if(s[end_at-2] == ' ' && s[end_at-1] != ' ' && s[end_at] != ' ' && (s[end_at+1] == ' ' || s[end_at+2] == ' ')){
+				end_at = end_at - 1;
+			} else if(s[end_at-3] == ' ' && s[end_at-2] != ' ' && s[end_at-1] != ' ' && s[end_at] != ' ' && (s[end_at+1] == ' ' || s[end_at+2] == ' ')){
+				end_at = end_at - 2;
+			}
+		}
+		result.push_back(s.substr(start_from_instead, end_at - start_from_instead));
+		start_from = end_at;
+	}
+	return result;
+}
+
+static sv_<ss_> toupper(const sv_<ss_> &ss)
+{
+	sv_<ss_> result = ss;
+	for(auto &s : result){
+		for(size_t i=0; i<s.size(); i++)
+			s[i] = toupper(s[i]);
+	}
+	return result;
+}
+
 static ss_ squeeze(const ss_ &s0, size_t len, size_t startpos=0, size_t try_len=SIZE_MAX)
 {
 	if(try_len == SIZE_MAX)
@@ -81,6 +129,7 @@ static void arduino_set_text(const ss_ &text)
 	}
 }
 
+// NOTE: Don't use if possible; interferes with other displayed things
 static void arduino_set_temp_text(const ss_ &text)
 {
 	char buf[30];

@@ -11,7 +11,7 @@
 #include "library.hpp"
 #include "play_cursor.hpp"
 #include "arduino_global.hpp"
-#include "arduino_semiglobal.hpp"
+#include "ui_output_queue.hpp"
 #include "../common/common.hpp"
 #include <mpv/client.h>
 #ifdef __WIN32__
@@ -136,12 +136,14 @@ void load_and_play_current_track_from_start()
 	after_mpv_loadfile(0, track.display_name,
 			get_album_name(current_media_content, current_cursor));
 
-	update_display();
+	//update_and_show_default_display();
+	handle_display();
 }
 
 void refresh_track()
 {
-	update_display();
+	//update_and_show_default_display();
+	handle_display();
 
 	if(current_media_content.albums.empty())
 		return;
@@ -318,7 +320,7 @@ void handle_mpv()
 				if(LOG_DEBUG)
 					printf_("Executing queued pause\n");
 				check_mpv_error(mpv_command_string(mpv, "pause"));
-				arduino_set_temp_text("PAUSE");
+				ui_output_queue::push_message("PAUSE");
 				current_cursor.current_pause_mode = PM_PAUSE;
 				arduino_set_extra_segments();
 				printf_("Paused.\n");
