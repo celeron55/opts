@@ -28,5 +28,13 @@ struct MediaContent
 	mutable sv_<size_t> mr_shuffled_album_order;
 };
 
+size_t get_total_tracks(const MediaContent &mc)
+{
+	size_t total = 0;
+	for(auto &a : mc.albums)
+		total += a.tracks.size();
+	return total;
+}
+
 extern MediaContent current_media_content;
 

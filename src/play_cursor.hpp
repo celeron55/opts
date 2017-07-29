@@ -122,9 +122,6 @@ public:
 	}
 };
 
-extern PlayCursor current_cursor;
-extern PlayCursor last_succesfully_playing_cursor;
-
 static Track get_track(const MediaContent &mc, const PlayCursor &cursor)
 {
 	if(cursor.album_seq_i >= (int)mc.albums.size()){
@@ -138,3 +135,179 @@ static Track get_track(const MediaContent &mc, const PlayCursor &cursor)
 	}
 	return album.tracks[cursor.track_i(mc)];
 }
+
+void cursor_bound_wrap(const MediaContent &mc, PlayCursor &cursor)
+{
+	if(mc.albums.empty())
+		return;
+	if(cursor.album_seq_i < 0)
+		cursor.album_seq_i = mc.albums.size() - 1;
+	if(cursor.album_seq_i >= (int)mc.albums.size())
+		cursor.album_seq_i = 0;
+
+	if(cursor.track_progress_mode == TPM_ALBUM_REPEAT){
+		const Album &album = mc.albums[cursor.album_i(mc)];
+		if(cursor.track_seq_i < 0){
+			cursor.track_seq_i = album.tracks.size() - 1;
+		} else if(cursor.track_seq_i >= (int)album.tracks.size()){
+			cursor.track_seq_i = 0;
+		}
+	} else {
+		const Album &album = mc.albums[cursor.album_i(mc)];
+		if(cursor.track_seq_i < 0){
+			cursor.album_seq_i--;
+			if(cursor.album_seq_i < 0)
+				cursor.album_seq_i = mc.albums.size() - 1;
+			const Album &album2 = mc.albums[cursor.album_i(mc)];
+			cursor.track_seq_i = album2.tracks.size() - 1;
+		} else if(cursor.track_seq_i >= (int)album.tracks.size()){
+			cursor.track_seq_i = 0;
+			cursor.album_seq_i++;
+			if(cursor.album_seq_i >= (int)mc.albums.size())
+				cursor.album_seq_i = 0;
+		}
+	}
+}
+
+ss_ get_album_name(const MediaContent &mc, const PlayCursor &cursor)
+{
+	if(cursor.album_seq_i >= (int)mc.albums.size()){
+		printf_("Album cursor overflow\n");
+		return "ERR:AOVF";
+	}
+	const Album &album = mc.albums[cursor.album_i(mc)];
+	return album.name;
+}
+
+ss_ get_track_name(const MediaContent &mc, const PlayCursor &cursor)
+{
+	if(cursor.album_seq_i >= (int)mc.albums.size()){
+		printf_("Album cursor overflow\n");
+		return "ERR:AOVF";
+	}
+	const Album &album = mc.albums[cursor.album_i(mc)];
+	if(cursor.track_seq_i >= (int)album.tracks.size()){
+		printf_("Track cursor overflow\n");
+		return "ERR:TOVF";
+	}
+	return album.tracks[cursor.track_i(mc)].display_name;
+}
+
+ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
+{
+	if(mc.albums.empty())
+		return "No media";
+
+	ss_ s;
+	if(cursor.track_progress_mode == TPM_SHUFFLE_ALL || cursor.track_progress_mode == TPM_MR_SHUFFLE){
+		s += "Album #"+itos(cursor.album_seq_i+1)+"="+itos(cursor.album_i(mc)+1)+
+				" ("+get_album_name(mc, cursor)+")"+
+				", track #"+itos(cursor.track_seq_i+1)+"="+itos(cursor.track_i(mc)+1)+
+				" ("+get_track_name(mc, cursor)+")"+
+				(cursor.time_pos != 0.0 ? (", pos "+ftos(cursor.time_pos)+"s") : ss_());
+	} else if(cursor.track_progress_mode == TPM_SHUFFLE_TRACKS){
+		s += "Album #"+itos(cursor.album_i(mc)+1)+" ("+get_album_name(mc, cursor)+")"+
+				", track #"+itos(cursor.track_seq_i+1)+"="+itos(cursor.track_i(mc)+1)+
+				" ("+get_track_name(mc, cursor)+")"+
+				(cursor.time_pos != 0.0 ? (", pos "+ftos(cursor.time_pos)+"s") : ss_());
+	} else {
+		s += "Album #"+itos(cursor.album_i(mc)+1)+" ("+get_album_name(mc, cursor)+
+				"), track #"+itos(cursor.track_i(mc)+1)+" ("+get_track_name(mc, cursor)+")"+
+				(cursor.time_pos != 0.0 ? (", pos "+ftos(cursor.time_pos)+"s") : ss_());
+	}
+	if(get_track_name(mc, cursor) != cursor.track_name)
+		s += ", should be track ("+cursor.track_name+")";
+	return s;
+}
+
+// If failed, return false and leave cursor as-is.
+bool resolve_track_from_current_album(const MediaContent &mc, PlayCursor &cursor)
+{
+	if(cursor.album_seq_i >= (int)mc.albums.size())
+		return false;
+	const Album &album = mc.albums[cursor.album_i(mc)];
+	PlayCursor cursor1 = cursor;
+	for(cursor1.track_seq_i=0; cursor1.track_seq_i<(int)album.tracks.size(); cursor1.track_seq_i++){
+		const Track &track = album.tracks[cursor1.track_i(mc)];
+		if(track.display_name == cursor.track_name){
+			cursor = cursor1;
+			return true;
+		}
+	}
+	return false;
+}
+
+// If failed, return false and leave cursor as-is.
+bool resolve_track_from_any_album(const MediaContent &mc, PlayCursor &cursor)
+{
+	PlayCursor cursor1 = cursor;
+	for(cursor1.album_seq_i=0; cursor1.album_seq_i<(int)mc.albums.size(); cursor1.album_seq_i++){
+		bool found = resolve_track_from_current_album(mc, cursor1);
+		if(found){
+			cursor = cursor1;
+			return true;
+		}
+	}
+	return false;
+}
+
+// Find track by the same name as near the cursor as possible. If failed, return
+// false and leave cursor as-is.
+bool force_resolve_track(const MediaContent &mc, PlayCursor &cursor)
+{
+	printf_("Force-resolving track\n");
+
+	// First find album
+	PlayCursor cursor1 = cursor;
+	bool album_found = false;
+	for(cursor1.album_seq_i=0; cursor1.album_seq_i<(int)mc.albums.size();
+			cursor1.album_seq_i++){
+		const Album &album = mc.albums[cursor1.album_i(mc)];
+		if(album.name == cursor.album_name){
+			album_found = true;
+			cursor = cursor1;
+			break;
+		}
+	}
+	if(!album_found){
+		printf_("-> Didn't find album \"%s\"\n", cs(cursor.album_name));
+		return resolve_track_from_any_album(mc, cursor);
+	}
+
+	// Get queued shuffled track order if such exists
+	if(!queued_album_shuffled_track_order.empty()){
+		printf_("Applying queued album shuffled track order\n");
+		if(cursor.album_i(mc) < (int)mc.albums.size()){
+			const Album &album = mc.albums[cursor.album_i(mc)];
+			if(queued_album_shuffled_track_order.size() == album.tracks.size()){
+				album.shuffled_track_order = queued_album_shuffled_track_order;
+				queued_album_shuffled_track_order.clear();
+			} else {
+				printf_("Applying queued album shuffled track order: track number mismatch\n");
+			}
+		} else {
+			printf_("Applying queued album shuffled track order: overflow\n");
+		}
+	}
+
+	// Then find track on the album
+	const Album &album = mc.albums[cursor.album_i(mc)];
+	const Track &track = album.tracks[cursor.track_i(mc)];
+	if(track.display_name == cursor.track_name){
+		printf_("Found as track #%i on album #%i\n",
+				cursor.track_i(mc)+1, cursor.album_i(mc)+1);
+		return true;
+	}
+	bool found = resolve_track_from_current_album(mc, cursor);
+	if(found){
+		printf_("Found as track #%i on album #%i\n",
+				cursor.track_i(mc)+1, cursor.album_i(mc)+1);
+		return true;
+	}
+	printf_("Didn't find track on current album; searching everywhere\n");
+	return resolve_track_from_any_album(mc, cursor);
+}
+
+extern PlayCursor current_cursor;
+extern PlayCursor last_succesfully_playing_cursor;
+
