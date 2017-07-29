@@ -878,6 +878,7 @@ void handle_stdin()
 				printf_("  i, info (playmodeget + pos)\n");
 				printf_("  path (show path of current track)\n");
 				printf_("  np/pp/rp/lp/sp<n> (next/previous/reset/list/select collection part)\n");
+				printf_("  reshuffle\n");
 			} else if(command == "next" || command == "n" || command == "+"){
 				handle_control_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
@@ -1017,6 +1018,9 @@ void handle_stdin()
 					void handle_key_release(int key);
 					handle_key_release(key);
 				}
+			} else if(w1n == "reshuffle"){
+				printf_("Reshuffling all media\n");
+				reshuffle_all_media(current_media_content);
 			} else {
 				printf_("Invalid command: \"%s\"\n", cs(command));
 			}
@@ -1584,60 +1588,6 @@ void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_al
 	}
 }
 
-static ss_ get_filename_from_path(const ss_ &path)
-{
-	size_t i = path.size();
-	for(;;){
-		if(i == 0)
-			break;
-		if(path[i-1] == '/')
-			break;
-		i--;
-	}
-	return path.substr(i);
-}
-
-static int detect_track_number(const Track &track)
-{
-	ss_ filename = get_filename_from_path(track.path);
-	const char *p = filename.c_str();
-	for(;;){
-		if(*p == 0)
-			return -1;
-		if(*p >= '0' && *p <= '9'){
-			return atoi(p);
-		}
-		p++;
-	}
-}
-
-void mr_shuffle_detect_albums()
-{
-	// Determine bool mr_shuffle_tracks based on whether the album has
-	// numbered tracks from 1 to something or not
-	for(auto &album : current_media_content.albums){
-		sv_<int> track_numbers; // -1 = not detected
-		for(auto &track : album.tracks){
-			track_numbers.push_back(detect_track_number(track));
-		}
-		bool numbers_found = true;
-		for(int i=0; i<(int)track_numbers.size(); i++){
-			bool found = false;
-			for(int j=0; j<(int)track_numbers.size(); j++){
-				if(track_numbers[j] == i+1){
-					found = true;
-					break;
-				}
-			}
-			if(!found){
-				numbers_found = false;
-				break;
-			}
-		}
-		album.mr_shuffle_tracks = !numbers_found;
-	}
-}
-
 sv_<ss_> get_collection_parts()
 {
 	sv_<ss_> media_paths;
@@ -1700,15 +1650,8 @@ void scan_current_mount()
 		scan_directory("root", current_mount_path+scan_midfix, current_media_content.albums);
 	}
 
-	// Create shuffled album order
-	create_shuffled_order(current_media_content.shuffled_album_order,
-			current_media_content.albums.size());
-
-	// Create mr. shuffled album order
-	create_mr_shuffled_order(current_media_content.mr_shuffled_album_order,
-			current_media_content.albums.size());
-
-	mr_shuffle_detect_albums();
+	// Create shuffled orders
+	reshuffle_all_media(current_media_content);
 
 	printf_("Scanned %zu albums.\n", current_media_content.albums.size());
 

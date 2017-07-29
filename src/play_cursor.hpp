@@ -69,7 +69,7 @@ public:
 		} else if(track_progress_mode == TPM_MR_SHUFFLE ||
 				track_progress_mode == TPM_SMART_TRACK_SHUFFLE ||
 				track_progress_mode == TPM_SMART_ALBUM_SHUFFLE){
-			if(!album.mr_shuffle_tracks)
+			if(!album.shuffle_tracks_in_smart_mode)
 				return track_seq_i;
 			if(album.shuffled_track_order.size() != album.tracks.size())
 				create_shuffled_order(album.shuffled_track_order, album.tracks.size());
@@ -166,7 +166,7 @@ public:
 		case TPM_SMART_ALBUM_SHUFFLE:
 		case TPM_SMART_TRACK_SHUFFLE: {
 			const Album &album = mc.albums[album_i(mc)];
-			if(album.mr_shuffle_tracks){
+			if(album.shuffle_tracks_in_smart_mode){
 				album.ensure_shuffled_track_order_exists();
 				for(int ti1=0; ti1<(int)album.tracks.size(); ti1++){
 					if((int)album.shuffled_track_order[ti1] == track_index_in_media){
