@@ -2,6 +2,18 @@
 #ifdef __WIN32__
 #  include "windows_includes.hpp"
 #else
+#  include <sys/poll.h>
+#  include <sys/types.h>
+#  include <sys/stat.h>
+#  include <sys/mount.h>
+#  include <unistd.h>
+#  include <signal.h>
+#  include <fcntl.h>
+#  include <termios.h>
+#  include <errno.h>
+#  include <stddef.h>
+#  include <stdio.h>
+#  include <stdlib.h>
 #endif
 
 static ss_ read_any(int fd, bool *dst_error=NULL)
