@@ -174,7 +174,7 @@ void load_stuff()
 	}
 }
 
-void on_ui_playpause()
+void command_playpause()
 {
 	bool idle = mpv_is_idle();
 
@@ -205,22 +205,22 @@ void on_ui_playpause()
 	}
 }
 
-void on_ui_next()
+void command_next()
 {
 	start_at_relative_track(0, 1);
 }
 
-void on_ui_prev()
+void command_prev()
 {
 	start_at_relative_track(0, -1);
 }
 
-void on_ui_nextalbum()
+void command_nextalbum()
 {
 	start_at_relative_track(1, 0);
 }
 
-void on_ui_prevalbum()
+void command_prevalbum()
 {
 	start_at_relative_track(-1, 0);
 }
@@ -244,7 +244,7 @@ void change_track_progress_mode(TrackProgressMode track_progress_mode)
 	arduino_set_extra_segments();
 }
 
-void on_ui_playmode()
+void command_playmode()
 {
 	TrackProgressMode track_progress_mode = current_cursor.track_progress_mode;
 
@@ -256,10 +256,10 @@ void on_ui_playmode()
 	change_track_progress_mode(track_progress_mode);
 }
 
-void on_ui_track_number(int track_n)
+void command_track_number(int track_n)
 {
 	if(track_n < 1){
-		printf_("on_ui_track_number(): track_n = %i < 1\n", track_n);
+		printf_("command_track_number(): track_n = %i < 1\n", track_n);
 		arduino_set_temp_text("PASS");
 		return;
 	}
@@ -268,13 +268,13 @@ void on_ui_track_number(int track_n)
 	auto &cursor = current_cursor;
 	auto &mc = current_media_content;
 	if(cursor.album_seq_i >= (int)mc.albums.size()){
-		printf_("on_ui_track_number(): album_seq_i %i doesn't exist\n", cursor.album_seq_i);
+		printf_("command_track_number(): album_seq_i %i doesn't exist\n", cursor.album_seq_i);
 		arduino_set_temp_text("PASS A");
 		return;
 	}
 	const Album &album = mc.albums[cursor.album_i(mc)];
 	if(track_media_index >= (int)album.tracks.size()){
-		printf_("on_ui_track_number(): track_media_index %i doesn't exist\n", track_media_index);
+		printf_("command_track_number(): track_media_index %i doesn't exist\n", track_media_index);
 		arduino_set_temp_text("PASS T");
 		return;
 	}
@@ -283,10 +283,10 @@ void on_ui_track_number(int track_n)
 	start_at_relative_track(0, 0);
 }
 
-void on_ui_album_number(int album_n)
+void command_album_number(int album_n)
 {
 	if(album_n < 1){
-		printf_("on_ui_album_number(): album_n = %i < 1\n", album_n);
+		printf_("command_album_number(): album_n = %i < 1\n", album_n);
 		arduino_set_temp_text("PASS");
 		return;
 	}
@@ -294,7 +294,7 @@ void on_ui_album_number(int album_n)
 
 	auto &mc = current_media_content;
 	if(album_media_index >= (int)mc.albums.size()){
-		printf_("on_ui_album_number(): album_media_index %i doesn't exist\n", album_media_index);
+		printf_("command_album_number(): album_media_index %i doesn't exist\n", album_media_index);
 		arduino_set_temp_text("PASS");
 		return;
 	}
@@ -304,7 +304,7 @@ void on_ui_album_number(int album_n)
 	start_at_relative_track(0, 0, true);
 }
 
-void next_collection_part(int dir)
+void command_next_collection_part(int dir)
 {
 	sv_<ss_> collection_parts = get_collection_parts();
 	int current_collection_part_i = -1;
@@ -321,14 +321,27 @@ void next_collection_part(int dir)
 
 	if((size_t)current_collection_part_i >= collection_parts.size()){
 		set_collection_part("");
+		// Show part
+		arduino_set_temp_text("- All -");
+		// Delay track scroll for one second
+		display_update_timestamp = time(0) + 1;
 	} else {
 		if((size_t)current_collection_part_i < collection_parts.size())
 			current_collection_part = collection_parts[current_collection_part_i];
 		set_collection_part(current_collection_part);
+		// Show part
+		arduino_set_temp_text(squeeze(current_collection_part, arduino_display_width));
+		// Delay track scroll for one second
+		display_update_timestamp = time(0) + 1;
 	}
 }
 
-void on_ui_search(const ss_ &searchstring)
+void ui_show_changed_album()
+{
+	temp_display_album();
+}
+
+void command_search(const ss_ &searchstring)
 {
 	printf_("Searching for \"%s\"...\n", cs(searchstring));
 	auto &mc = current_media_content;
@@ -374,7 +387,7 @@ void on_ui_search(const ss_ &searchstring)
 	}
 }
 
-void on_ui_random_album()
+void command_random_album()
 {
 	if(current_media_content.albums.empty()){
 		printf_("Picking random album when there is no media -> recovery mode: "
@@ -391,7 +404,7 @@ void on_ui_random_album()
 	start_at_relative_track(0, 0, true);
 }
 
-void on_ui_random_album_approx_num_tracks(size_t approx_num_tracks)
+void command_random_album_approx_num_tracks(size_t approx_num_tracks)
 {
 	auto &mc = current_media_content;
 	sv_<int> suitable_albums;
@@ -415,7 +428,7 @@ void on_ui_random_album_approx_num_tracks(size_t approx_num_tracks)
 	start_at_relative_track(0, 0, true);
 }
 
-void on_ui_random_album_min_num_tracks(size_t min_num_tracks)
+void command_random_album_min_num_tracks(size_t min_num_tracks)
 {
 	auto &mc = current_media_content;
 	sv_<int> suitable_albums;
@@ -437,7 +450,7 @@ void on_ui_random_album_min_num_tracks(size_t min_num_tracks)
 	start_at_relative_track(0, 0, true);
 }
 
-void on_ui_random_album_max_num_tracks(size_t max_num_tracks)
+void command_random_album_max_num_tracks(size_t max_num_tracks)
 {
 	auto &mc = current_media_content;
 	sv_<int> suitable_albums;
@@ -459,7 +472,7 @@ void on_ui_random_album_max_num_tracks(size_t max_num_tracks)
 	start_at_relative_track(0, 0, true);
 }
 
-void on_ui_random_track()
+void command_random_track()
 {
 	auto &mc = current_media_content;
 	auto &cursor = current_cursor;
@@ -512,15 +525,15 @@ void handle_stdin()
 				printf_("  np/pp/rp/lp/sp<n> (next/previous/reset/list/select collection part)\n");
 				printf_("  reshuffle\n");
 			} else if(command == "next" || command == "n" || command == "+"){
-				on_ui_next();
+				command_next();
 			} else if(command == "prev" || command == "p" || command == "-"){
-				on_ui_prev();
+				command_prev();
 			} else if(command == "nextalbum" || command == "na" || command == "N" || command == "."){
-				on_ui_nextalbum();
+				command_nextalbum();
 			} else if(command == "prevalbum" || command == "pa" || command == "P" || command == ","){
-				on_ui_prevalbum();
+				command_prevalbum();
 			} else if(command == "pause" || command == " "){
-				on_ui_playpause();
+				command_playpause();
 			} else if(w1n == "fwd" || w1n == "f"){
 				int seconds = stoi(fn.next(""), 30);
 				mpv_command_string(mpv, cs("seek +"+itos(seconds)));
@@ -532,7 +545,7 @@ void handle_stdin()
 				current_cursor.time_pos -= seconds;
 				printf_("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "playmode" || command == "m"){
-				on_ui_playmode();
+				command_playmode();
 			} else if(command == "playmodeget" || command == "mg"){
 				printf_("Track progress mode: %s\n",
 						tpm_to_string(current_cursor.track_progress_mode));
@@ -543,45 +556,45 @@ void handle_stdin()
 			} else if(command.size() >= 2 && (command.substr(0, 1) == "/" ||
 					command.substr(0, 1) == "1")){
 				ss_ searchstring = command.substr(1);
-				on_ui_search(searchstring);
+				command_search(searchstring);
 				last_searchstring = searchstring;
 			} else if(command == "/" || command == "1"){
 				if(last_searchstring != "")
-					on_ui_search(last_searchstring);
+					command_search(last_searchstring);
 			} else if(w1n == "album"){
 				int album_n = stoi(fn.next(""), -1);
-				on_ui_album_number(album_n);
+				command_album_number(album_n);
 			} else if(w1n == "track"){
 				int track_n = stoi(fn.next(""), -1);
-				on_ui_track_number(track_n);
+				command_track_number(track_n);
 			} else if(w1n == "randomalbum" || w1n == "ra" || w1n == "r"){
 				int approx_num_tracks = stoi(fn.next(""), -1);
 				if(approx_num_tracks == -1)
-					on_ui_random_album();
+					command_random_album();
 				else
-					on_ui_random_album_approx_num_tracks(approx_num_tracks);
+					command_random_album_approx_num_tracks(approx_num_tracks);
 			} else if(w1n == "rg" || w1n == "g"){
 				static int last_min_num_tracks = -1;
 				int min_num_tracks = stoi(fn.next(""), -1);
 				if(min_num_tracks != -1){
-					on_ui_random_album_min_num_tracks(min_num_tracks);
+					command_random_album_min_num_tracks(min_num_tracks);
 					last_min_num_tracks = min_num_tracks;
 				} else if(last_min_num_tracks != -1){
 					printf_("Using previous parameter: %i\n", last_min_num_tracks);
-					on_ui_random_album_min_num_tracks(last_min_num_tracks);
+					command_random_album_min_num_tracks(last_min_num_tracks);
 				}
 			} else if(w1n == "rl" || w1n == "l"){
 				static int last_max_num_tracks = -1;
 				int max_num_tracks = stoi(fn.next(""), -1);
 				if(max_num_tracks != -1){
-					on_ui_random_album_max_num_tracks(max_num_tracks);
+					command_random_album_max_num_tracks(max_num_tracks);
 					last_max_num_tracks = max_num_tracks;
 				} else if(last_max_num_tracks != -1){
 					printf_("Using previous parameter: %i\n", last_max_num_tracks);
-					on_ui_random_album_max_num_tracks(last_max_num_tracks);
+					command_random_album_max_num_tracks(last_max_num_tracks);
 				}
 			} else if(w1 == "randomtrack" || w1 == "rt"){
-				on_ui_random_track();
+				command_random_track();
 			} else if(command == "albumlist" || command == "al" || command == "la"){
 				auto &cursor = current_cursor;
 				for(size_t i=0; i<current_media_content.albums.size(); i++){
@@ -616,9 +629,9 @@ void handle_stdin()
 				Track track = get_track(current_media_content, current_cursor);
 				printf_("%s\n", cs(track.path));
 			} else if(command == "np"){
-				next_collection_part(1);
+				command_next_collection_part(1);
 			} else if(command == "pp"){
-				next_collection_part(-1);
+				command_next_collection_part(-1);
 			} else if(command == "rp"){
 				set_collection_part("");
 			} else if(command == "lp"){

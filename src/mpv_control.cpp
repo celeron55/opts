@@ -1,7 +1,6 @@
 #include "mpv_control.hpp"
 #include "arduino_controls.hpp"
 #include "stuff.hpp"
-#include "c55_getopt.h"
 #include "command_accumulator.hpp"
 #include "string_util.hpp"
 #include "file_watch.hpp"
@@ -18,7 +17,6 @@
 #include "play_cursor.hpp"
 #include "arduino_global.hpp"
 #include "arduino_semiglobal.hpp"
-#include "media_scan.hpp"
 #include "../common/common.hpp"
 #include <mpv/client.h>
 #include <fstream>
@@ -150,13 +148,11 @@ void load_and_play_current_track_from_start()
 	after_mpv_loadfile(0, track.display_name,
 			get_album_name(current_media_content, current_cursor));
 
-	void update_display();
 	update_display();
 }
 
 void refresh_track()
 {
-	void update_display();
 	update_display();
 
 	if(current_media_content.albums.empty())

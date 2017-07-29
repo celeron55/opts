@@ -17,23 +17,21 @@ extern set_<ss_> enabled_log_sources;
 #define LOG_DEBUG enabled_log_sources.count("debug")
 
 void save_stuff();
-void check_mpv_error(int status);
-void refresh_track();
-void next_collection_part(int dir);
-void force_start_at_cursor();
+void ui_show_changed_album();
 
-void on_ui_playpause();
-void on_ui_next();
-void on_ui_prev();
-void on_ui_nextalbum();
-void on_ui_prevalbum();
-void on_ui_playmode();
-void on_ui_track_number(int track_n);
-void on_ui_album_number(int album_n);
-void on_ui_search(const ss_ &searchstring);
-void on_ui_random_album();
-void on_ui_random_album_approx_num_tracks(size_t approx_num_tracks);
-void on_ui_random_album_min_num_tracks(size_t min_num_tracks);
-void on_ui_random_album_max_num_tracks(size_t max_num_tracks);
-void on_ui_random_track();
+void command_playpause();
+void command_next();
+void command_prev();
+void command_nextalbum();
+void command_prevalbum();
+void command_playmode();
+void command_track_number(int track_n);
+void command_album_number(int album_n);
+void command_next_collection_part(int dir);
+void command_search(const ss_ &searchstring);
+void command_random_album();
+void command_random_album_approx_num_tracks(size_t approx_num_tracks);
+void command_random_album_min_num_tracks(size_t min_num_tracks);
+void command_random_album_max_num_tracks(size_t max_num_tracks);
+void command_random_track();
 

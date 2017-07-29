@@ -9,6 +9,7 @@
 #include "string_util.hpp"
 #include "sleep.hpp"
 #include "terminal.hpp"
+#include "mpv_control.hpp"
 #include <mpv/client.h>
 
 int arduino_serial_fd = -1;
@@ -32,74 +33,74 @@ void handle_key_press(int key)
 
 	if(key == 24){
 		if(stateful_input_mode != SIM_NONE)
-			on_ui_stateful_input_cancel();
-		on_ui_playpause();
+			stateful_input_cancel();
+		command_playpause();
 		return;
 	}
 	if(key == 12){
 		if(stateful_input_mode != SIM_NONE)
-			on_ui_stateful_input_enter();
+			stateful_input_enter();
 		else
-			on_ui_next();
+			command_next();
 		return;
 	}
 	if(key == 27){
 		if(stateful_input_mode != SIM_NONE)
-			on_ui_stateful_input_cancel();
+			stateful_input_cancel();
 		else
-			on_ui_prev();
+			command_prev();
 		return;
 	}
 	if(key == 23){
 		if(stateful_input_mode != SIM_NONE)
-			on_ui_stateful_input_enter();
+			stateful_input_enter();
 		else
-			on_ui_nextalbum();
+			command_nextalbum();
 		return;
 	}
 	if(key == 29){
 		if(stateful_input_mode != SIM_NONE)
-			on_ui_stateful_input_cancel();
+			stateful_input_cancel();
 		else
-			on_ui_prevalbum();
+			command_prevalbum();
 		return;
 	}
 	if(key == 17){ // Upmost center
 		if(stateful_input_mode != SIM_NONE)
-			on_ui_stateful_input_cancel();
-		on_ui_playmode();
+			stateful_input_cancel();
+		command_playmode();
 		return;
 	}
 	if(key == 18){ // Right upper
-		on_ui_random_album();
+		command_random_album();
 		return;
 	}
 	if(key == 13){ // Right lower
-		on_ui_stateful_input_mode();
+		stateful_input_mode_select();
 		return;
 	}
 	if(key == 21){ // 1
-		on_ui_input_digit(1);
+		hwcontrol_input_digit(1);
 		return;
 	}
 	if(key == 16){ // 2
-		on_ui_input_digit(2);
+		hwcontrol_input_digit(2);
 		return;
 	}
 	if(key == 10){ // 3
-		on_ui_input_digit(3);
+		hwcontrol_input_digit(3);
 		return;
 	}
 	if(key == 15){ // 4
-		on_ui_input_digit(4);
+		hwcontrol_input_digit(4);
 		return;
 	}
 	if(key == 20){ // 5
-		on_ui_input_digit(5);
+		hwcontrol_input_digit(5);
 		return;
 	}
 	if(key == 25){ // 6
-		on_ui_input_digit(6);
+		hwcontrol_input_digit(6);
 		return;
 	}
 }
@@ -294,7 +295,7 @@ void handle_display()
 		display_next_startpos += arduino_display_width;
 }
 
-void on_ui_stateful_input_mode()
+void stateful_input_mode_select()
 {
 	if(stateful_input_mode < SIM_NUM_MODES - 1)
 		stateful_input_mode = (StatefulInputMode)(stateful_input_mode + 1);
@@ -304,7 +305,7 @@ void on_ui_stateful_input_mode()
 	update_display();
 }
 
-void on_ui_stateful_input_mode_input(char input_char)
+void stateful_input_mode_input(char input_char)
 {
 	if(stateful_input_accu.put_char(input_char)){
 		ss_ command = stateful_input_accu.command();
@@ -317,11 +318,11 @@ void on_ui_stateful_input_mode_input(char input_char)
 		switch(stateful_input_mode){
 		case SIM_TRACK_NUMBER:
 			stateful_input_accu.reset();
-			on_ui_track_number(input_number);
+			command_track_number(input_number);
 			break;
 		case SIM_ALBUM_NUMBER:
 			stateful_input_accu.reset();
-			on_ui_album_number(input_number);
+			command_album_number(input_number);
 			break;
 		case SIM_NONE:
 		case SIM_NUM_MODES:
@@ -331,12 +332,12 @@ void on_ui_stateful_input_mode_input(char input_char)
 	update_display();
 }
 
-void on_ui_stateful_input_enter()
+void stateful_input_enter()
 {
-	on_ui_stateful_input_mode_input('\r');
+	stateful_input_mode_input('\r');
 }
 
-void on_ui_stateful_input_cancel()
+void stateful_input_cancel()
 {
 	stateful_input_accu.reset();
 	stateful_input_mode = SIM_NONE;
@@ -347,10 +348,10 @@ void update_stateful_input()
 {
 }
 
-void on_ui_input_digit(int input_digit)
+void hwcontrol_input_digit(int input_digit)
 {
 	if(stateful_input_mode != SIM_NONE){
-		on_ui_stateful_input_mode_input('0'+input_digit);
+		stateful_input_mode_input('0'+input_digit);
 		return;
 	}
 
@@ -367,14 +368,14 @@ void on_ui_input_digit(int input_digit)
 	}
 
 	if(input_digit == 3){
-		next_collection_part(-1);
+		command_next_collection_part(-1);
 		// TODO: Add a temp text display prioritization system
 		sleep(1); // Wait while directory is shown on screen
 		return;
 	}
 
 	if(input_digit == 4){
-		next_collection_part(1);
+		command_next_collection_part(1);
 		// TODO: Add a temp text display prioritization system
 		sleep(1); // Wait while directory is shown on screen
 		return;

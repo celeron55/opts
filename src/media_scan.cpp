@@ -1,24 +1,17 @@
 #include "media_scan.hpp"
-#include "arduino_controls.hpp"
 #include "stuff.hpp"
-#include "c55_getopt.h"
-#include "command_accumulator.hpp"
 #include "string_util.hpp"
 #include "file_watch.hpp"
-#include "types.hpp"
 #include "filesys.hpp"
-#include "scope_end_trigger.hpp"
-#include "arduino_firmware.hpp"
 #include "stuff2.hpp"
-#include "mkdir_p.hpp"
 #include "terminal.hpp"
 #include "ui.hpp"
 #include "print.hpp"
 #include "library.hpp"
 #include "play_cursor.hpp"
-#include "arduino_global.hpp"
-#include "arduino_semiglobal.hpp"
+#include "mpv_control.hpp"
 #include "../common/common.hpp"
+#include "types.hpp"
 #include <mpv/client.h>
 #include <fstream>
 #include <algorithm> // sort
@@ -188,15 +181,6 @@ void set_collection_part(const ss_ &part)
 {
 	current_collection_part = part;
 
-	// Show part
-	if(current_collection_part == ""){
-		arduino_set_temp_text("- All -");
-	} else {
-		arduino_set_temp_text(squeeze(current_collection_part, arduino_display_width));
-	}
-	// Delay track scroll for one second
-	display_update_timestamp = time(0) + 1;
-
 	printf_("Switched to part \"%s\"\n", cs(current_collection_part));
 
 	if(part != ""){
@@ -243,7 +227,7 @@ void scan_current_mount()
 			current_cursor.track_name == ""){
 		if(LOG_DEBUG)
 			printf_("Starting without saved state; picking random album\n");
-		on_ui_random_album();
+		command_random_album();
 		return;
 	}
 
@@ -255,12 +239,12 @@ void scan_current_mount()
 
 	if(!force_resolve_track(current_media_content, current_cursor)){
 		printf_("Force-resolve track failed; picking random album\n");
-		on_ui_random_album();
+		command_random_album();
 		return;
 	}
 
-	temp_display_album();
 	force_start_at_cursor();
+	ui_show_changed_album();
 }
 
 bool check_partition_exists(const ss_ &devname0)
