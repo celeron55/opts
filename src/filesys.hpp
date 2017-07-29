@@ -2,8 +2,7 @@
 #include "types.hpp"
 
 #ifdef __WIN32__
-#  include "Winsock2.h"
-#  include <windows.h>
+#  include "windows_includes.hpp"
 #else
 #  include <dirent.h>
 #endif
