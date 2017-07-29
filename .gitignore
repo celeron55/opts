@@ -3,7 +3,11 @@
 session.vim
 /player
 /opts
+/opts.exe
 /saved_state*
 /avrdude.log*
 /todo.txt
 /local
+/local*
+/*.dll
+/tmp
