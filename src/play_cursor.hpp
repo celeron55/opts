@@ -31,6 +31,7 @@ public:
 	int track_seq_i = 0;
 	double time_pos = 0;
 	int64_t stream_pos = 0;
+	int64_t stream_end = 0;
 	ss_ track_name;
 	ss_ album_name;
 
@@ -271,6 +272,13 @@ ss_ get_track_name(const MediaContent &mc, const PlayCursor &cursor)
 	return album.tracks[cursor.track_i(mc)].display_name;
 }
 
+ss_ format_stream_pos(const PlayCursor &cursor)
+{
+	if(cursor.stream_end == 0)
+		return "?";
+	return ss_()+itos(cursor.stream_pos * 100 / cursor.stream_end)+"%";
+}
+
 ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
 {
 	if(mc.albums.empty())
@@ -281,17 +289,15 @@ ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
 		s += "Album #"+itos(cursor.album_seq_i+1)+"="+itos(cursor.album_i(mc)+1)+
 				" ("+get_album_name(mc, cursor)+")"+
 				", track #"+itos(cursor.track_seq_i+1)+"="+itos(cursor.track_i(mc)+1)+
-				" ("+get_track_name(mc, cursor)+")"+
-				(cursor.time_pos != 0.0 ? (", pos "+ftos(cursor.time_pos)+"s") : ss_());
+				" ("+get_track_name(mc, cursor)+")"+" @ "+format_stream_pos(cursor);
 	} else if(cursor.track_progress_mode == TPM_SHUFFLE_TRACKS){
 		s += "Album #"+itos(cursor.album_i(mc)+1)+" ("+get_album_name(mc, cursor)+")"+
 				", track #"+itos(cursor.track_seq_i+1)+"="+itos(cursor.track_i(mc)+1)+
-				" ("+get_track_name(mc, cursor)+")"+
-				(cursor.time_pos != 0.0 ? (", pos "+ftos(cursor.time_pos)+"s") : ss_());
+				" ("+get_track_name(mc, cursor)+")"+" @ "+format_stream_pos(cursor);
 	} else {
 		s += "Album #"+itos(cursor.album_i(mc)+1)+" ("+get_album_name(mc, cursor)+
 				"), track #"+itos(cursor.track_i(mc)+1)+" ("+get_track_name(mc, cursor)+")"+
-				(cursor.time_pos != 0.0 ? (", pos "+ftos(cursor.time_pos)+"s") : ss_());
+				" @ "+format_stream_pos(cursor);
 	}
 	if(get_track_name(mc, cursor) != cursor.track_name)
 		s += ", should be track ("+cursor.track_name+")";

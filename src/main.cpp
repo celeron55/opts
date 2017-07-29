@@ -88,7 +88,6 @@ PlayCursor current_cursor;
 PlayCursor last_succesfully_playing_cursor;
 
 bool track_was_loaded = false;
-int64_t current_track_stream_end = 0;
 
 time_t mpv_last_not_idle_timestamp = 0;
 time_t mpv_last_loadfile_timestamp = 0;
@@ -97,7 +96,7 @@ void after_mpv_loadfile(double start_pos, const ss_ &track_name, const ss_ &albu
 {
 	mpv_last_loadfile_timestamp = time(0);
 
-	current_track_stream_end = 0; // Will be filled in at time-pos getter code or something
+	current_cursor.stream_end = 0; // Will be filled in at time-pos getter code or something
 
 	if(current_cursor.track_name != track_name){
 		printf_("WARNING: Changing track name at loadfile to \"%s\"\n",
@@ -1411,13 +1410,14 @@ void handle_mpv()
 		}
 		if(event->event_id == MPV_EVENT_FILE_LOADED){
 			track_was_loaded = true;
-			if(current_track_stream_end == 0){
+			if(current_cursor.stream_end == 0){
 				int64_t stream_end = 0;
 				mpv_get_property(mpv, "stream-end", MPV_FORMAT_INT64, &stream_end);
-				current_track_stream_end = stream_end;
+				current_cursor.stream_end = stream_end;
+				current_cursor.stream_end = stream_end;
 				if(LOG_DEBUG){
 					printf_("Got current track stream_end: %" PRId64 "\n",
-							current_track_stream_end);
+							current_cursor.stream_end);
 				}
 			}
 			if(queued_pause){
@@ -1447,17 +1447,18 @@ void handle_mpv()
 			current_cursor.stream_pos = stream_pos;
 			last_succesfully_playing_cursor = current_cursor;
 
-			if(current_track_stream_end == 0){
+			if(current_cursor.stream_end == 0){
 				int64_t stream_end = 0;
 				mpv_get_property(mpv, "stream-end", MPV_FORMAT_INT64, &stream_end);
-				current_track_stream_end = stream_end;
+				current_cursor.stream_end = stream_end;
+				current_cursor.stream_end = stream_end;
 				printf_("Got current track stream_end: %" PRId64 "\n",
-						current_track_stream_end);
+						current_cursor.stream_end);
 			}
 
 			if(!minimize_display_updates || time(0) % 10 == 0){
 				arduino_serial_write(">PROGRESS:"+
-						itos(stream_pos * 255 / current_track_stream_end)+"\r\n");
+						itos(stream_pos * 255 / current_cursor.stream_end)+"\r\n");
 			}
 
 			// Reset starting position so that if this track is being looped, it
