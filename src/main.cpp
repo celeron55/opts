@@ -85,166 +85,15 @@ ss_ current_collection_part;
 bool queued_pause = false;
 sv_<size_t> queued_album_shuffled_track_order;
 
-// Yes, there are no modes for album progression. Albums progress sequentially,
-// tracks inside albums can progress differencly.
-enum TrackProgressMode {
-	TPM_NORMAL,
-	TPM_ALBUM_REPEAT,
-	TPM_ALBUM_REPEAT_TRACK,
-	TPM_SHUFFLE_ALL,
-	TPM_SHUFFLE_TRACKS,
-	TPM_MR_SHUFFLE,
-
-	TPM_NUM_MODES,
-};
-// NOTE: This could possibly be moved inside PlayCursor
-TrackProgressMode track_progress_mode = TPM_NORMAL;
-
-struct Track
-{
-	ss_ path;
-	ss_ display_name;
-
-	Track(const ss_ &path="", const ss_ &display_name=""):
-		path(path), display_name(display_name)
-	{}
-	bool operator < (const Track &other){
-		return (path < other.path);
-	}
-};
-
-struct Album
-{
-	ss_ name;
-	sv_<Track> tracks;
-	mutable sv_<size_t> shuffled_track_order;
-	bool mr_shuffle_tracks = false;
-};
-
-struct MediaContent
-{
-	sv_<Album> albums;
-	mutable sv_<size_t> shuffled_album_order;
-	mutable sv_<size_t> mr_shuffled_album_order;
-};
+#include "library.hpp"
 
 MediaContent current_media_content;
 
-struct PlayCursor
-{
-protected:
-	TrackProgressMode track_progress_mode = TPM_NORMAL;
-public:
-	int album_seq_i = 0;
-	int track_seq_i = 0;
-	double time_pos = 0;
-	int64_t stream_pos = 0;
-	ss_ track_name;
-	ss_ album_name;
+#include "play_cursor.hpp"
 
-	int album_i(const MediaContent &mc) const {
-		if(mc.albums.empty())
-			return 0;
-		if(album_seq_i < 0 || album_seq_i >= (int)mc.albums.size()){
-			printf_("album_seq_i overflow\n");
-			return 0;
-		}
-		if(track_progress_mode == TPM_SHUFFLE_ALL){
-			return mc.shuffled_album_order[album_seq_i];
-		} else if(track_progress_mode == TPM_MR_SHUFFLE){
-			return mc.mr_shuffled_album_order[album_seq_i];
-		} else {
-			return album_seq_i;
-		}
-	}
-	int track_i(const MediaContent &mc) const {
-		if(mc.albums.empty())
-			return 0;
-		const Album &album = mc.albums[album_i(mc)];
-		if(album.tracks.empty())
-			return 0;
-		if(track_seq_i < 0 || track_seq_i >= (int)album.tracks.size()){
-			printf_("track_seq_i overflow\n");
-			return 0;
-		}
-		if(track_progress_mode == TPM_SHUFFLE_ALL ||
-				track_progress_mode == TPM_SHUFFLE_TRACKS){
-			if(album.shuffled_track_order.size() != album.tracks.size())
-				create_shuffled_order(album.shuffled_track_order, album.tracks.size());
-			return album.shuffled_track_order[track_seq_i];
-		} else if(track_progress_mode == TPM_MR_SHUFFLE){
-			if(!album.mr_shuffle_tracks)
-				return track_seq_i;
-			if(album.shuffled_track_order.size() != album.tracks.size())
-				create_shuffled_order(album.shuffled_track_order, album.tracks.size());
-			return album.shuffled_track_order[track_seq_i];
-		} else {
-			return track_seq_i;
-		}
-	}
-
-	void set_track_progress_mode(const MediaContent &mc, TrackProgressMode new_tpm){
-		if(new_tpm == track_progress_mode)
-			return;
-		if((new_tpm == TPM_SHUFFLE_ALL || new_tpm == TPM_SHUFFLE_TRACKS)
-				&& !mc.albums.empty()){
-			// Resolve into shuffled indexing
-			const Album &album = mc.albums[album_seq_i];
-			if(album.shuffled_track_order.size() != album.tracks.size())
-				create_shuffled_order(album.shuffled_track_order, album.tracks.size());
-			for(int ti1=0; ti1<(int)album.tracks.size(); ti1++){
-				if((int)album.shuffled_track_order[ti1] == track_seq_i){
-					track_seq_i = ti1;
-					break;
-				}
-			}
-			if(new_tpm == TPM_SHUFFLE_ALL){
-				for(int ai1=0; ai1<(int)mc.albums.size(); ai1++){
-					if((int)mc.shuffled_album_order[ai1] == album_seq_i){
-						album_seq_i = ai1;
-						break;
-					}
-				}
-			}
-		}
-		if((new_tpm == TPM_MR_SHUFFLE) && !mc.albums.empty()){
-			// Resolve into shuffled indexing
-			const Album &album = mc.albums[album_seq_i];
-			if(album.shuffled_track_order.size() != album.tracks.size())
-				create_shuffled_order(album.shuffled_track_order, album.tracks.size());
-			for(int ti1=0; ti1<(int)album.tracks.size(); ti1++){
-				if((int)album.shuffled_track_order[ti1] == track_seq_i){
-					track_seq_i = ti1;
-					break;
-				}
-			}
-			for(int ai1=0; ai1<(int)mc.albums.size(); ai1++){
-				if((int)mc.mr_shuffled_album_order[ai1] == album_seq_i){
-					album_seq_i = ai1;
-					break;
-				}
-			}
-		}
-		if(track_progress_mode == TPM_SHUFFLE_ALL ||
-				track_progress_mode == TPM_SHUFFLE_TRACKS ||
-				track_progress_mode == TPM_MR_SHUFFLE){
-			// Resolve back from shuffled indexing
-			int new_album_seq_i = album_i(mc);
-			int new_track_seq_i = track_i(mc);
-			if(track_progress_mode == TPM_SHUFFLE_ALL ||
-					track_progress_mode == TPM_MR_SHUFFLE){
-				album_seq_i = new_album_seq_i;
-			}
-			track_seq_i = new_track_seq_i;
-		}
-		track_progress_mode = new_tpm;
-	}
-};
-
+TrackProgressMode track_progress_mode = TPM_NORMAL;
 PlayCursor current_cursor;
 PlayCursor last_succesfully_playing_cursor;
-
-Track get_track(const MediaContent &mc, const PlayCursor &cursor);
 
 bool track_was_loaded = false;
 int64_t current_track_stream_end = 0;
@@ -252,7 +101,7 @@ int64_t current_track_stream_end = 0;
 time_t mpv_last_not_idle_timestamp = 0;
 time_t mpv_last_loadfile_timestamp = 0;
 
-void on_loadfile(double start_pos, const ss_ &track_name, const ss_ &album_name)
+void after_mpv_loadfile(double start_pos, const ss_ &track_name, const ss_ &album_name)
 {
 	mpv_last_loadfile_timestamp = time(0);
 
@@ -323,7 +172,7 @@ void save_stuff()
 	save_blob += ftos(save_time_pos) + ";";
 	save_blob += itos(save_stream_pos) + ";";
 	save_blob += itos(current_pause_mode == PM_PAUSE) + ";";
-	save_blob += itos(track_progress_mode) + ";";
+	save_blob += itos(last_succesfully_playing_cursor.track_progress_mode) + ";";
 	save_blob += "\n";
 	save_blob += last_succesfully_playing_cursor.track_name + "\n";
 	save_blob += last_succesfully_playing_cursor.album_name + "\n";
@@ -368,7 +217,7 @@ void load_stuff()
 	last_succesfully_playing_cursor.time_pos = stof(f1.next(";"), 0.0);
 	last_succesfully_playing_cursor.stream_pos = stoi(f1.next(";"), 0);
 	queued_pause = stoi(f1.next(";"), 0);
-	track_progress_mode = (TrackProgressMode)stoi(f1.next(";"), 0);
+	last_succesfully_playing_cursor.track_progress_mode = (TrackProgressMode)stoi(f1.next(";"), 0);
 	last_succesfully_playing_cursor.track_name = f.next("\n");
 	last_succesfully_playing_cursor.album_name = f.next("\n");
 
@@ -391,20 +240,6 @@ void load_stuff()
 	}
 }
 
-Track get_track(const MediaContent &mc, const PlayCursor &cursor)
-{
-	if(cursor.album_seq_i >= (int)mc.albums.size()){
-		printf_("Album cursor overflow\n");
-		return Track();
-	}
-	const Album &album = mc.albums[cursor.album_i(mc)];
-	if(cursor.track_seq_i >= (int)album.tracks.size()){
-		printf_("Track cursor overflow\n");
-		return Track();
-	}
-	return album.tracks[cursor.track_i(mc)];
-}
-
 void cursor_bound_wrap(const MediaContent &mc, PlayCursor &cursor)
 {
 	if(mc.albums.empty())
@@ -414,7 +249,7 @@ void cursor_bound_wrap(const MediaContent &mc, PlayCursor &cursor)
 	if(cursor.album_seq_i >= (int)mc.albums.size())
 		cursor.album_seq_i = 0;
 
-	if(track_progress_mode == TPM_ALBUM_REPEAT){
+	if(cursor.track_progress_mode == TPM_ALBUM_REPEAT){
 		const Album &album = mc.albums[cursor.album_i(mc)];
 		if(cursor.track_seq_i < 0){
 			cursor.track_seq_i = album.tracks.size() - 1;
@@ -468,13 +303,13 @@ ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
 		return "No media";
 
 	ss_ s;
-	if(track_progress_mode == TPM_SHUFFLE_ALL || track_progress_mode == TPM_MR_SHUFFLE){
+	if(cursor.track_progress_mode == TPM_SHUFFLE_ALL || cursor.track_progress_mode == TPM_MR_SHUFFLE){
 		s += "Album #"+itos(cursor.album_seq_i+1)+"="+itos(cursor.album_i(mc)+1)+
 				" ("+get_album_name(mc, cursor)+")"+
 				", track #"+itos(cursor.track_seq_i+1)+"="+itos(cursor.track_i(mc)+1)+
 				" ("+get_track_name(mc, cursor)+")"+
 				(cursor.time_pos != 0.0 ? (", pos "+ftos(cursor.time_pos)+"s") : ss_());
-	} else if(track_progress_mode == TPM_SHUFFLE_TRACKS){
+	} else if(cursor.track_progress_mode == TPM_SHUFFLE_TRACKS){
 		s += "Album #"+itos(cursor.album_i(mc)+1)+" ("+get_album_name(mc, cursor)+")"+
 				", track #"+itos(cursor.track_seq_i+1)+"="+itos(cursor.track_i(mc)+1)+
 				" ("+get_track_name(mc, cursor)+")"+
@@ -688,7 +523,7 @@ void force_start_at_cursor()
 	const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
 	check_mpv_error(mpv_command(mpv, cmd));
 
-	on_loadfile(current_cursor.time_pos, track.display_name,
+	after_mpv_loadfile(current_cursor.time_pos, track.display_name,
 			get_album_name(current_media_content, current_cursor));
 
 	// Wait for the start-file event
@@ -767,7 +602,7 @@ void load_and_play_current_track_from_start()
 	const char *cmd[] = {"loadfile", track.path.c_str(), NULL};
 	check_mpv_error(mpv_command(mpv, cmd));
 
-	on_loadfile(0, track.display_name,
+	after_mpv_loadfile(0, track.display_name,
 			get_album_name(current_media_content, current_cursor));
 
 	void update_display();
@@ -815,7 +650,7 @@ void temp_display_album()
 void arduino_set_extra_segments()
 {
 	uint8_t extra_segment_flags = 0;
-	switch(track_progress_mode){
+	switch(current_cursor.track_progress_mode){
 	case TPM_NORMAL:
 		break;
 	case TPM_ALBUM_REPEAT:
@@ -893,7 +728,7 @@ const char* tpm_to_string(TrackProgressMode m)
 			"UNKNOWN";
 }
 
-void handle_changed_track_progress_mode()
+void change_track_progress_mode(TrackProgressMode track_progress_mode)
 {
 	printf_("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
 
@@ -914,12 +749,14 @@ void handle_changed_track_progress_mode()
 
 void handle_control_playmode()
 {
+	TrackProgressMode track_progress_mode = current_cursor.track_progress_mode;
+
 	if(track_progress_mode < TPM_NUM_MODES - 1)
 		track_progress_mode = (TrackProgressMode)(track_progress_mode + 1);
 	else
 		track_progress_mode = (TrackProgressMode)0;
 
-	handle_changed_track_progress_mode();
+	change_track_progress_mode(track_progress_mode);
 }
 
 void handle_control_track_number(int track_n)
@@ -1319,7 +1156,8 @@ void handle_stdin()
 			} else if(command == "playmode" || command == "m"){
 				handle_control_playmode();
 			} else if(command == "playmodeget" || command == "mg"){
-				printf_("Track progress mode: %s\n", tpm_to_string(track_progress_mode));
+				printf_("Track progress mode: %s\n",
+						tpm_to_string(current_cursor.track_progress_mode));
 			} else if(command == "pos"){
 				printf_("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "save"){
@@ -1394,7 +1232,7 @@ void handle_stdin()
 					printf_("Collection part: \"%s\"\n",
 							cs(current_collection_part));
 				printf_("Track progress mode: %s\n",
-						tpm_to_string(track_progress_mode));
+						tpm_to_string(current_cursor.track_progress_mode));
 				printf_("%s\n", cs(get_cursor_info(current_media_content, current_cursor)));
 			} else if(command == "path"){
 				Track track = get_track(current_media_content, current_cursor);
@@ -1740,7 +1578,7 @@ void automated_start_play_next_track()
 {
 	printf_("Automated start of next track\n");
 
-	switch(track_progress_mode){
+	switch(current_cursor.track_progress_mode){
 	case TPM_NORMAL:
 	case TPM_ALBUM_REPEAT:
 	case TPM_SHUFFLE_ALL:
@@ -2693,7 +2531,7 @@ int main(int argc, char *argv[])
 		printf_("Doing initial partition scan\n");
 	handle_changed_partitions();
 
-	handle_changed_track_progress_mode();
+	change_track_progress_mode(current_cursor.track_progress_mode);
 
 	while(do_main_loop){
 		handle_stdin();
