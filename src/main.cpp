@@ -404,6 +404,8 @@ void arduino_set_extra_segments()
 	case TPM_SHUFFLE_TRACKS:
 		extra_segment_flags |= (1<<DISPLAY_FLAG_SHUFFLE) | (1<<DISPLAY_FLAG_REPEAT_ONE);
 		break;
+	case TPM_SMART_TRACK_SHUFFLE:
+	case TPM_SMART_ALBUM_SHUFFLE:
 	case TPM_MR_SHUFFLE:
 		extra_segment_flags |= (1<<DISPLAY_FLAG_SHUFFLE) | (1<<DISPLAY_FLAG_REPEAT) |
 				(1<<DISPLAY_FLAG_REPEAT_ONE);
@@ -458,13 +460,18 @@ void handle_control_prevalbum()
 
 const char* tpm_to_string(TrackProgressMode m)
 {
-	return m == TPM_NORMAL ? "NORMAL" :
-			m == TPM_ALBUM_REPEAT ? "ALBUM REPEAT" :
-			m == TPM_ALBUM_REPEAT_TRACK ? "TRACK REPEAT" :
-			m == TPM_SHUFFLE_ALL ? "ALL SHUFFLE" :
-			m == TPM_SHUFFLE_TRACKS ? "TRACK SHUFFLE" :
-			m == TPM_MR_SHUFFLE ? "MR. SHUFFLE" :
-			"UNKNOWN";
+	switch(m){
+	case TPM_NORMAL:              return "NORMAL";
+	case TPM_ALBUM_REPEAT:        return "ALBUM REPEAT";
+	case TPM_ALBUM_REPEAT_TRACK:  return "TRACK REPEAT";
+	case TPM_SHUFFLE_ALL:         return "ALL SHUFFLE";
+	case TPM_SHUFFLE_TRACKS:      return "TRACK SHUFFLE";
+	case TPM_SMART_ALBUM_SHUFFLE: return "SMART ALBUM SHUFFLE";
+	case TPM_SMART_TRACK_SHUFFLE: return "SMART TRACK SHUFFLE";
+	case TPM_MR_SHUFFLE:          return "MR. SHUFFLE";
+	case TPM_NUM_MODES:           return "INVALID";
+	}
+	return "INVALID";
 }
 
 void change_track_progress_mode(TrackProgressMode track_progress_mode)
@@ -1321,6 +1328,8 @@ void automated_start_play_next_track()
 	case TPM_ALBUM_REPEAT:
 	case TPM_SHUFFLE_ALL:
 	case TPM_SHUFFLE_TRACKS:
+	case TPM_SMART_TRACK_SHUFFLE:
+	case TPM_SMART_ALBUM_SHUFFLE:
 	case TPM_MR_SHUFFLE:
 		current_cursor.track_seq_i++;
 		current_cursor.time_pos = 0;

@@ -7,7 +7,9 @@ enum TrackProgressMode {
 	TPM_ALBUM_REPEAT_TRACK,
 	TPM_SHUFFLE_ALL,
 	TPM_SHUFFLE_TRACKS,
-	TPM_MR_SHUFFLE,
+	TPM_SMART_ALBUM_SHUFFLE, // Tracks shuffled when appropriate, albums always shuffled
+	TPM_SMART_TRACK_SHUFFLE, // Tracks shuffled when appropriate, albums not shuffled
+	TPM_MR_SHUFFLE, // Albums shuffled in groups of 5
 
 	TPM_NUM_MODES,
 };
@@ -39,7 +41,8 @@ public:
 			printf_("album_seq_i overflow\n");
 			return 0;
 		}
-		if(track_progress_mode == TPM_SHUFFLE_ALL){
+		if(track_progress_mode == TPM_SHUFFLE_ALL ||
+				track_progress_mode == TPM_SMART_ALBUM_SHUFFLE){
 			return mc.shuffled_album_order[album_seq_i];
 		} else if(track_progress_mode == TPM_MR_SHUFFLE){
 			return mc.mr_shuffled_album_order[album_seq_i];
@@ -63,7 +66,9 @@ public:
 			if(album.shuffled_track_order.size() != album.tracks.size())
 				create_shuffled_order(album.shuffled_track_order, album.tracks.size());
 			return album.shuffled_track_order[track_seq_i];
-		} else if(track_progress_mode == TPM_MR_SHUFFLE){
+		} else if(track_progress_mode == TPM_MR_SHUFFLE ||
+				track_progress_mode == TPM_SMART_TRACK_SHUFFLE ||
+				track_progress_mode == TPM_SMART_ALBUM_SHUFFLE){
 			if(!album.mr_shuffle_tracks)
 				return track_seq_i;
 			if(album.shuffled_track_order.size() != album.tracks.size())
@@ -110,7 +115,8 @@ public:
 		if(mc.albums.empty())
 			return;
 		switch(track_progress_mode){
-		case TPM_SHUFFLE_ALL: {
+		case TPM_SHUFFLE_ALL:
+		case TPM_SMART_ALBUM_SHUFFLE: {
 			for(int ai1=0; ai1<(int)mc.albums.size(); ai1++){
 				if((int)mc.shuffled_album_order[ai1] == album_index_in_media){
 					set_album_seq_i(mc, ai1);
@@ -132,6 +138,7 @@ public:
 		case TPM_ALBUM_REPEAT:
 		case TPM_ALBUM_REPEAT_TRACK:
 		case TPM_SHUFFLE_TRACKS:
+		case TPM_SMART_TRACK_SHUFFLE:
 		case TPM_NUM_MODES: {
 			set_album_seq_i(mc, album_index_in_media);
 			return;
@@ -155,7 +162,9 @@ public:
 				}
 			}
 		}
-		case TPM_MR_SHUFFLE: {
+		case TPM_MR_SHUFFLE:
+		case TPM_SMART_ALBUM_SHUFFLE:
+		case TPM_SMART_TRACK_SHUFFLE: {
 			const Album &album = mc.albums[album_i(mc)];
 			if(album.mr_shuffle_tracks){
 				album.ensure_shuffled_track_order_exists();
