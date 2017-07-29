@@ -947,7 +947,7 @@ int main(int argc, char *argv[])
 
 	// Wait idle event so that we don't do things twice at startup
 	arduino_set_text("WAIT IDLE");
-	wait_mpv_event(MPV_EVENT_IDLE, 5000);
+	wait_until_mpv_idle();
 	arduino_set_text("OK");
 
 	if(LOG_DEBUG)

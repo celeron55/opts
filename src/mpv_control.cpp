@@ -1,16 +1,11 @@
 #include "mpv_control.hpp"
 #include "arduino_controls.hpp"
 #include "stuff.hpp"
-#include "command_accumulator.hpp"
-#include "string_util.hpp"
 #include "file_watch.hpp"
 #include "types.hpp"
 #include "filesys.hpp"
 #include "scope_end_trigger.hpp"
-#include "arduino_firmware.hpp"
 #include "stuff2.hpp"
-#include "mkdir_p.hpp"
-#include "terminal.hpp"
 #include "ui.hpp"
 #include "print.hpp"
 #include "library.hpp"
@@ -19,24 +14,18 @@
 #include "arduino_semiglobal.hpp"
 #include "../common/common.hpp"
 #include <mpv/client.h>
-#include <fstream>
-#include <algorithm> // sort
 #ifdef __WIN32__
 #  include "windows_includes.hpp"
 #else
-#  include <sys/poll.h>
-#  include <sys/types.h>
-#  include <sys/stat.h>
-#  include <sys/mount.h>
 #  include <unistd.h>
-#  include <signal.h>
-#  include <fcntl.h>
-#  include <termios.h>
 #endif
-#include <errno.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
+
+void after_mpv_loadfile(double start_pos, const ss_ &track_name, const ss_ &album_name);
+void load_and_play_current_track_from_start();
+void eat_all_mpv_events();
+void wait_mpv_event(int event_id, int max_ms);
+void automated_start_play_next_track();
+void do_something_instead_of_idle();
 
 bool track_was_loaded = false;
 
@@ -102,7 +91,6 @@ void force_start_at_cursor()
 			get_album_name(current_media_content, current_cursor));
 
 	// Wait for the start-file event
-	void wait_mpv_event(int event_id, int max_ms);
 	wait_mpv_event(MPV_EVENT_START_FILE, 1000);
 
 	refresh_track();
@@ -220,6 +208,11 @@ void wait_mpv_event(int event_id, int max_ms)
 		}
 		usleep(5000);
 	}
+}
+
+void wait_until_mpv_idle()
+{
+	wait_mpv_event(MPV_EVENT_IDLE, 5000);
 }
 
 void automated_start_play_next_track()
