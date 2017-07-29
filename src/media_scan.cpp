@@ -105,7 +105,7 @@ void scan_directory(const ss_ &root_name, const ss_ &path, sv_<Album> &result_al
 				continue;
 			//printf_("File: %s\n", cs(path+"/"+fname));
 			char stripped[100];
-			snprintf(stripped, sizeof stripped, fname);
+			snprintf(stripped, sizeof stripped, "%s", fname);
 			strip_file_extension(stripped);
 			root_album.tracks.push_back(Track(path+"/"+fname, stripped));
 		} else if(ftype == FS_DIR){
