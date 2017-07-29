@@ -55,13 +55,13 @@ while true; do
 		echo -ne ">SET_TEXT:SW UP\r\n" >&3
 
 		# Avoid overwriting old executable with an x86 one
-		cp "$INSTALLPOINT"/player "$INSTALLPOINT"/player.saved
+		cp "$INSTALLPOINT"/opts "$INSTALLPOINT"/opts.saved
 
 		mkdir -p "$INSTALLPOINT"
 		cp -r "$MOUNTPOINT"/FW/* "$INSTALLPOINT"/
 
 		# Avoid overwriting old executable with an x86 one
-		cp "$INSTALLPOINT"/player.saved "$INSTALLPOINT"/player
+		cp "$INSTALLPOINT"/opts.saved "$INSTALLPOINT"/opts
 
 		echo -ne ">SET_TEXT:BUILD\r\n" >&3
 
