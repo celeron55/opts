@@ -1,5 +1,8 @@
 #pragma once
 #include "stuff2.hpp"
+#include "print.hpp"
+
+extern sv_<size_t> queued_album_shuffled_track_order;
 
 enum TrackProgressMode {
 	TPM_NORMAL,
@@ -13,6 +16,22 @@ enum TrackProgressMode {
 
 	TPM_NUM_MODES,
 };
+
+static const char* tpm_to_string(TrackProgressMode m)
+{
+	switch(m){
+	case TPM_NORMAL:              return "NORMAL";
+	case TPM_ALBUM_REPEAT:        return "ALBUM REPEAT";
+	case TPM_ALBUM_REPEAT_TRACK:  return "TRACK REPEAT";
+	case TPM_SHUFFLE_ALL:         return "ALL SHUFFLE";
+	case TPM_SHUFFLE_TRACKS:      return "TRACK SHUFFLE";
+	case TPM_SMART_ALBUM_SHUFFLE: return "SMART ALBUM SHUFFLE";
+	case TPM_SMART_TRACK_SHUFFLE: return "SMART TRACK SHUFFLE";
+	case TPM_MR_SHUFFLE:          return "MR. SHUFFLE";
+	case TPM_NUM_MODES:           return "INVALID";
+	}
+	return "INVALID";
+}
 
 enum PauseMode {
 	PM_PLAY,
@@ -215,7 +234,7 @@ static Track get_track(const MediaContent &mc, const PlayCursor &cursor)
 	return album.tracks[cursor.track_i(mc)];
 }
 
-void cursor_bound_wrap(const MediaContent &mc, PlayCursor &cursor)
+static void cursor_bound_wrap(const MediaContent &mc, PlayCursor &cursor)
 {
 	if(mc.albums.empty())
 		return;
@@ -248,7 +267,7 @@ void cursor_bound_wrap(const MediaContent &mc, PlayCursor &cursor)
 	}
 }
 
-ss_ get_album_name(const MediaContent &mc, const PlayCursor &cursor)
+static ss_ get_album_name(const MediaContent &mc, const PlayCursor &cursor)
 {
 	if(cursor.album_seq_i >= (int)mc.albums.size()){
 		printf_("Album cursor overflow\n");
@@ -258,7 +277,7 @@ ss_ get_album_name(const MediaContent &mc, const PlayCursor &cursor)
 	return album.name;
 }
 
-ss_ get_track_name(const MediaContent &mc, const PlayCursor &cursor)
+static ss_ get_track_name(const MediaContent &mc, const PlayCursor &cursor)
 {
 	if(cursor.album_seq_i >= (int)mc.albums.size()){
 		printf_("Album cursor overflow\n");
@@ -272,14 +291,14 @@ ss_ get_track_name(const MediaContent &mc, const PlayCursor &cursor)
 	return album.tracks[cursor.track_i(mc)].display_name;
 }
 
-ss_ format_stream_pos(const PlayCursor &cursor)
+static ss_ format_stream_pos(const PlayCursor &cursor)
 {
 	if(cursor.stream_end == 0)
 		return "?";
 	return ss_()+itos(cursor.stream_pos * 100 / cursor.stream_end)+"%";
 }
 
-ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
+static ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
 {
 	if(mc.albums.empty())
 		return "No media";
@@ -305,7 +324,7 @@ ss_ get_cursor_info(const MediaContent &mc, const PlayCursor &cursor)
 }
 
 // If failed, return false and leave cursor as-is.
-bool resolve_track_from_current_album(const MediaContent &mc, PlayCursor &cursor)
+static bool resolve_track_from_current_album(const MediaContent &mc, PlayCursor &cursor)
 {
 	if(cursor.album_seq_i >= (int)mc.albums.size())
 		return false;
@@ -322,7 +341,7 @@ bool resolve_track_from_current_album(const MediaContent &mc, PlayCursor &cursor
 }
 
 // If failed, return false and leave cursor as-is.
-bool resolve_track_from_any_album(const MediaContent &mc, PlayCursor &cursor)
+static bool resolve_track_from_any_album(const MediaContent &mc, PlayCursor &cursor)
 {
 	PlayCursor cursor1 = cursor;
 	for(cursor1.album_seq_i=0; cursor1.album_seq_i<(int)mc.albums.size(); cursor1.album_seq_i++){
@@ -337,7 +356,7 @@ bool resolve_track_from_any_album(const MediaContent &mc, PlayCursor &cursor)
 
 // Find track by the same name as near the cursor as possible. If failed, return
 // false and leave cursor as-is.
-bool force_resolve_track(const MediaContent &mc, PlayCursor &cursor)
+static bool force_resolve_track(const MediaContent &mc, PlayCursor &cursor)
 {
 	printf_("Force-resolving track\n");
 

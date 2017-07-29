@@ -34,7 +34,7 @@ struct MediaContent
 	mutable sv_<size_t> mr_shuffled_album_order;
 };
 
-size_t get_total_tracks(const MediaContent &mc)
+static size_t get_total_tracks(const MediaContent &mc)
 {
 	size_t total = 0;
 	for(auto &a : mc.albums)
@@ -96,7 +96,7 @@ static void smart_shuffle_scan_albums(MediaContent &mc)
 	}
 }
 
-void reshuffle_all_media(MediaContent &mc)
+static void reshuffle_all_media(MediaContent &mc)
 {
 	// Clear track orders
 	for(auto &album : mc.albums)
