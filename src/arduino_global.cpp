@@ -14,6 +14,21 @@
 #include "ui_output_queue.hpp"
 #include "../common/common.hpp"
 #include <mpv/client.h>
+#ifdef __WIN32__
+#else
+#  include <sys/poll.h>
+#  include <sys/types.h>
+#  include <sys/stat.h>
+#  include <sys/mount.h>
+#  include <unistd.h>
+#  include <signal.h>
+#  include <fcntl.h>
+#  include <termios.h>
+#endif
+#include <errno.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 int arduino_serial_fd = -1;
 ss_ arduino_serial_fd_path;
