@@ -109,15 +109,6 @@ void after_mpv_loadfile(double start_pos, const ss_ &track_name, const ss_ &albu
 	arduino_serial_write(">PROGRESS:0\r\n");
 }
 
-enum PauseMode {
-	PM_PLAY,
-	PM_PAUSE,
-	// Not a real pause but one that is used while in power off mode (until power is
-	// actually cut, or power off mode is switched off)
-	PM_UNFOCUS_PAUSE,
-};
-PauseMode current_pause_mode = PM_PLAY;
-
 enum StatefulInputMode {
 	SIM_NONE,
 	SIM_TRACK_NUMBER,
@@ -163,7 +154,7 @@ void save_stuff()
 	save_blob += itos(last_succesfully_playing_cursor.track_seq_i) + ";";
 	save_blob += ftos(save_time_pos) + ";";
 	save_blob += itos(save_stream_pos) + ";";
-	save_blob += itos(current_pause_mode == PM_PAUSE) + ";";
+	save_blob += itos(last_succesfully_playing_cursor.current_pause_mode == PM_PAUSE) + ";";
 	save_blob += itos(last_succesfully_playing_cursor.track_progress_mode) + ";";
 	save_blob += "\n";
 	save_blob += last_succesfully_playing_cursor.track_name + "\n";
@@ -324,7 +315,7 @@ void handle_control_playpause()
 		// Some kind of track is loaded; toggle playback
 		check_mpv_error(mpv_command_string(mpv, "pause"));
 
-		current_pause_mode = was_pause ? PM_PLAY : PM_PAUSE; // Invert
+		current_cursor.current_pause_mode = was_pause ? PM_PLAY : PM_PAUSE; // Invert
 
 		if(!was_pause){
 			arduino_set_temp_text("PAUSE");
@@ -420,7 +411,7 @@ void arduino_set_extra_segments()
 	case TPM_NUM_MODES:
 		break;
 	}
-	if(current_pause_mode == PM_PAUSE){
+	if(current_cursor.current_pause_mode == PM_PAUSE){
 		extra_segment_flags |= (1<<DISPLAY_FLAG_PAUSE);
 	}
 	arduino_serial_write(">EXTRA_SEGMENTS:"+itos(extra_segment_flags)+"\r\n");
@@ -1187,16 +1178,16 @@ void handle_hwcontrols()
 			} else if(first == "<MODE"){
 				ss_ mode = f.next(":");
 				if(mode == "RASPBERRY"){
-					if(current_pause_mode == PM_UNFOCUS_PAUSE){
+					if(current_cursor.current_pause_mode == PM_UNFOCUS_PAUSE){
 						printf_("Leaving unfocus pause\n");
 						check_mpv_error(mpv_command_string(mpv, "pause"));
-						current_pause_mode = PM_PLAY;
+						current_cursor.current_pause_mode = PM_PLAY;
 					}
 				} else {
-					if(current_pause_mode == PM_PLAY){
+					if(current_cursor.current_pause_mode == PM_PLAY){
 						printf_("Entering unfocus pause\n");
 						check_mpv_error(mpv_command_string(mpv, "pause"));
-						current_pause_mode = PM_UNFOCUS_PAUSE;
+						current_cursor.current_pause_mode = PM_UNFOCUS_PAUSE;
 					}
 				}
 			} else if(first == "<POWERDOWN_WARNING"){
@@ -1423,7 +1414,7 @@ void handle_mpv()
 					printf_("Executing queued pause\n");
 				check_mpv_error(mpv_command_string(mpv, "pause"));
 				arduino_set_temp_text("PAUSE");
-				current_pause_mode = PM_PAUSE;
+				current_cursor.current_pause_mode = PM_PAUSE;
 				arduino_set_extra_segments();
 				printf_("Paused.\n");
 			}

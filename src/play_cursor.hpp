@@ -12,10 +12,19 @@ enum TrackProgressMode {
 	TPM_NUM_MODES,
 };
 
+enum PauseMode {
+	PM_PLAY,
+	PM_PAUSE,
+	// Not a real pause but one that is used while in power off mode (until power is
+	// actually cut, or power off mode is switched off)
+	PM_UNFOCUS_PAUSE,
+};
+
 struct PlayCursor
 {
 public:
 	TrackProgressMode track_progress_mode = TPM_NORMAL;
+	PauseMode current_pause_mode = PM_PLAY;
 	int album_seq_i = 0;
 	int track_seq_i = 0;
 	double time_pos = 0;
