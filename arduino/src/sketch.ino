@@ -177,6 +177,8 @@ void power_off_handle_keys()
 
 		Serial.print(F("<MODE:"));
 		Serial.println(CONTROL_MODES[g_control_mode].name);
+
+		save_everything_with_rate_limit(100);
 	}
 }
 
@@ -205,6 +207,8 @@ void aux_handle_keys()
 
 		Serial.print(F("<MODE:"));
 		Serial.println(CONTROL_MODES[g_control_mode].name);
+
+		save_everything_with_rate_limit(100);
 	}
 }
 
@@ -265,6 +269,8 @@ void raspberry_handle_keys()
 
 		Serial.print(F("<MODE:"));
 		Serial.println(CONTROL_MODES[g_control_mode].name);
+
+		save_everything_with_rate_limit(100);
 	}
 	if(g_config_option != CO_LCD_AND_BUTTONS_TEST){
 		for(uint8_t i=0; i<30; i++){
@@ -889,6 +895,7 @@ void save_everything()
 	eeprom_write_byte(wa++, g_lcd_byte0);
 	eeprom_write_byte(wa++, g_lcd_byte1);
 	eeprom_write_byte(wa++, g_volume_controls.volume_aux);
+	eeprom_write_byte(wa++, g_manual_power_state);
 }
 
 void load_everything()
@@ -913,6 +920,7 @@ void load_everything()
 	g_lcd_byte0 = eeprom_read_byte(ra++) & 0x11;
 	g_lcd_byte1 = eeprom_read_byte(ra++) & 0x01;
 	g_volume_controls.volume_aux = eeprom_read_byte(ra++);
+	g_manual_power_state = eeprom_read_byte(ra++);
 }
 
 void save_everything_with_rate_limit(uint32_t rate_limit_ms)
@@ -955,17 +963,51 @@ static void display_synchronous_message(const char *message)
 
 void heat_up()
 {
-	// Power up main amplifier board supply (to light up the LCD)
-	digitalWrite(PIN_MAIN_POWER_CONTROL, HIGH);
+	// If ignition is switched off in automatic power-on state, don't heat
+	if(!g_manual_power_state && !digitalRead(PIN_IGNITION_INPUT)){
+		return;
+	}
+
+	// Make initial measurement
+	_delay_ms(50);
+	int t = read_temperature();
+
+	if(t >= 15 && t <= 80){
+		// Temperature is ok; return silently
+		return;
+	}
+
+	// If temperature is weird, just return
+	if(t < -70 || t > 70){
+		display_synchronous_message("WEIRD T");
+		_delay_ms(2000);
+		char buf[9];
+		snprintf(buf, sizeof buf, "%i C", t);
+		display_synchronous_message(buf);
+		_delay_ms(2000);
+		return;
+	}
 
 	// This is to avoid heating for a moment so that the engine can be started
-	// before heating eats some battery
-	bool pre_heat_delay_done = false;
+	// before power is used for heating
+	display_synchronous_message("WILL");
+	_delay_ms(2000);
+	display_synchronous_message("HEAT");
+	_delay_ms(2000);
+	display_synchronous_message("3");
+	_delay_ms(2000);
+	display_synchronous_message("2");
+	_delay_ms(2000);
+	display_synchronous_message("1");
+	_delay_ms(2000);
+
+	// Switch on heater
+	digitalWrite(PIN_HEATER, HIGH);
 
 	// Check temperature and heat if necessary
 	for(;;){
-		// If ignition feed is switched off, stop
-		if(!digitalRead(PIN_IGNITION_INPUT)){
+		// If ignition is switched off in automatic power-on state, stop heating
+		if(!g_manual_power_state && !digitalRead(PIN_IGNITION_INPUT)){
 			// Switch off heater
 			digitalWrite(PIN_HEATER, LOW);
 
@@ -978,6 +1020,9 @@ void heat_up()
 
 		// If temperature is weird, stop
 		if(t < -70 || t > 70){
+			// Switch off heater
+			digitalWrite(PIN_HEATER, LOW);
+
 			display_synchronous_message("WEIRD T");
 			_delay_ms(2000);
 			char buf[9];
@@ -987,15 +1032,13 @@ void heat_up()
 			break;
 		}
 
-		// Break when sufficient temperature
-		if(t >= 30){
+		// Stop at sufficient temperature
+		if(t >= 20){
 			// Switch off heater
 			digitalWrite(PIN_HEATER, LOW);
 
-			if(pre_heat_delay_done){
-				display_synchronous_message("HEATED");
-				_delay_ms(1000);
-			}
+			display_synchronous_message("HEATED");
+			_delay_ms(1000);
 			break;
 		}
 
@@ -1003,29 +1046,15 @@ void heat_up()
 		// temperature
 		digitalWrite(PIN_RASPBERRY_POWER_OFF, HIGH);
 
-		if(!pre_heat_delay_done){
-			display_synchronous_message("WILL");
-			_delay_ms(2000);
-			display_synchronous_message("HEAT");
-			_delay_ms(2000);
-			pre_heat_delay_done = true;
-		}
-
-		// Set heater on while temperature too low
-		digitalWrite(PIN_HEATER, HIGH);
-
+		// Display temperature
 		char buf[9];
 		snprintf(buf, sizeof buf, "HEAT%3iC", t);
 		display_synchronous_message(buf);
 		_delay_ms(500);
 	}
 
-	// Switch off heater
+	// Switch off heater before exiting
 	digitalWrite(PIN_HEATER, LOW);
-
-	// Power off the main amplifier board supply (just because that's how it was
-	// before)
-	digitalWrite(PIN_MAIN_POWER_CONTROL, LOW);
 }
 
 void power_off()
@@ -1047,6 +1076,9 @@ void power_off()
 
 void power_on()
 {
+	// Power up main amplifier board supply (lights up LCD)
+	digitalWrite(PIN_MAIN_POWER_CONTROL, HIGH);
+
 	// Before doing anything, make sure we have sufficient temperature for the
 	// Raspberry Pi to work at all
 	heat_up();
@@ -1056,9 +1088,6 @@ void power_on()
 	g_raspberry_power_on = true;
 
 	g_lcd_do_sleep = false;
-
-	// Power up main amplifier board supply
-	digitalWrite(PIN_MAIN_POWER_CONTROL, HIGH);
 
 	mode_update();
 
@@ -1081,7 +1110,8 @@ void setup()
 	reset_display_data(g_display_data);
 	reset_display_data(g_temp_display_data);
 
-	if(g_control_mode != CM_POWER_OFF){
+	if(g_control_mode != CM_POWER_OFF &&
+			(g_manual_power_state || digitalRead(PIN_IGNITION_INPUT))){
 		power_on();
 	} else {
 		power_off();
