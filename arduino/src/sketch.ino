@@ -21,6 +21,8 @@ const int PIN_VOL_CL = 13;
 const int PIN_STANDBY_DISABLE = 5;
 const int PIN_RASPBERRY_POWER_OFF = 2;
 const int PIN_IGNITION_INPUT = A2;
+const int PIN_TEMPERATURE = A3;
+const int PIN_HEATER = A4;
 
 bool g_saveables_dirty = false;
 
@@ -306,6 +308,10 @@ void init_io()
 	pinMode(PIN_RASPBERRY_POWER_OFF, OUTPUT);
 
 	pinMode(PIN_IGNITION_INPUT, INPUT);
+
+	pinMode(PIN_TEMPERATURE, INPUT_PULLUP);
+	pinMode(PIN_HEATER, OUTPUT);
+	digitalWrite(PIN_HEATER, LOW);
 }
 
 // Bits are sent LSB first
@@ -918,6 +924,110 @@ void save_everything_with_rate_limit(uint32_t rate_limit_ms)
 	}
 }
 
+int read_temperature()
+{
+	const uint8_t num_samples = 4;
+	const float r_nominal = 12000;
+	const float t_nominal = 25;
+	const float b_coeff = 3500;
+	const float r_series = 40000;
+
+	float avg = 0;
+	for(uint8_t i=0; i<num_samples; i++){
+		avg += analogRead(PIN_TEMPERATURE);
+	}
+	avg /= num_samples;
+
+	float thermistor_r = r_series / (1023.0f / avg - 1);
+
+	float s = log(thermistor_r / r_nominal) / b_coeff;
+	s += 1.0 / (t_nominal + 273.15);
+	s = 1.0 / s - 273.15;
+
+	return s;
+}
+
+static void display_synchronous_message(const char *message)
+{
+	set_all_segments(g_temp_display_data, message);
+	lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
+}
+
+void heat_up()
+{
+	// Power up main amplifier board supply (to light up the LCD)
+	digitalWrite(PIN_MAIN_POWER_CONTROL, HIGH);
+
+	// This is to avoid heating for a moment so that the engine can be started
+	// before heating eats some battery
+	bool pre_heat_delay_done = false;
+
+	// Check temperature and heat if necessary
+	for(;;){
+		// If ignition feed is switched off, stop
+		if(!digitalRead(PIN_IGNITION_INPUT)){
+			// Switch off heater
+			digitalWrite(PIN_HEATER, LOW);
+
+			display_synchronous_message("NO IGNIT");
+			_delay_ms(2000);
+			break;
+		}
+
+		int t = read_temperature();
+
+		// If temperature is weird, stop
+		if(t < -70 || t > 70){
+			display_synchronous_message("WEIRD T");
+			_delay_ms(2000);
+			char buf[9];
+			snprintf(buf, sizeof buf, "%i C", t);
+			display_synchronous_message(buf);
+			_delay_ms(2000);
+			break;
+		}
+
+		// Break when sufficient temperature
+		if(t >= 30){
+			// Switch off heater
+			digitalWrite(PIN_HEATER, LOW);
+
+			if(pre_heat_delay_done){
+				display_synchronous_message("HEATED");
+				_delay_ms(1000);
+			}
+			break;
+		}
+
+		// Make sure raspberru pi is not powered while it isn't at sufficient
+		// temperature
+		digitalWrite(PIN_RASPBERRY_POWER_OFF, HIGH);
+
+		if(!pre_heat_delay_done){
+			display_synchronous_message("WILL");
+			_delay_ms(2000);
+			display_synchronous_message("HEAT");
+			_delay_ms(2000);
+			pre_heat_delay_done = true;
+		}
+
+		// Set heater on while temperature too low
+		digitalWrite(PIN_HEATER, HIGH);
+
+		char buf[9];
+		snprintf(buf, sizeof buf, "HEAT%3iC", t);
+		display_synchronous_message(buf);
+		_delay_ms(500);
+	}
+
+	// Switch off heater
+	digitalWrite(PIN_HEATER, LOW);
+
+	// Power off the main amplifier board supply (just because that's how it was
+	// before)
+	digitalWrite(PIN_MAIN_POWER_CONTROL, LOW);
+}
+
 void power_off()
 {
 	// Standby amplifier
@@ -937,6 +1047,10 @@ void power_off()
 
 void power_on()
 {
+	// Before doing anything, make sure we have sufficient temperature for the
+	// Raspberry Pi to work at all
+	heat_up();
+
 	// Power up raspberry pi
 	digitalWrite(PIN_RASPBERRY_POWER_OFF, LOW);
 	g_raspberry_power_on = true;
@@ -979,6 +1093,9 @@ void setup()
 
 void loop()
 {
+	// Make sure heater is off
+	digitalWrite(PIN_HEATER, LOW);
+
 	if(!g_manual_power_state){
 		if(digitalRead(PIN_IGNITION_INPUT) && !g_amplifier_power_on){
 			power_on();
