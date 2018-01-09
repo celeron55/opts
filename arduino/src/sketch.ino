@@ -972,7 +972,7 @@ void heat_up()
 	_delay_ms(50);
 	int t = read_temperature();
 
-	if(t >= 15 && t <= 80){
+	if(t >= 25 && t <= 80){
 		// Temperature is ok; return silently
 		return;
 	}
@@ -1033,7 +1033,7 @@ void heat_up()
 		}
 
 		// Stop at sufficient temperature
-		if(t >= 20){
+		if(t >= 30){
 			// Switch off heater
 			digitalWrite(PIN_HEATER, LOW);
 
