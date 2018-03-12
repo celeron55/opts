@@ -101,8 +101,12 @@ bool mpv_is_idle()
 	// For some reason the idle property always says "yes" on Windows, so don't
 	// even read it on Windows
 #ifndef __WIN32__
-	mpv_get_property(mpv, "idle", MPV_FORMAT_STRING, &idle_cs);
+	mpv_get_property(mpv, "idle-active", MPV_FORMAT_STRING, &idle_cs);
+	if(idle_cs == NULL)
+		mpv_get_property(mpv, "idle", MPV_FORMAT_STRING, &idle_cs);
 #endif
+	if(LOG_DEBUG)
+		printf_("MPV idle(-active) = %s\n", idle_cs);
 	if(idle_cs == NULL){
 		static bool warned = false;
 		if(!warned){
