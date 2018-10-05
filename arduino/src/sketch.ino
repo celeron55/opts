@@ -4,6 +4,9 @@
 #include "../../common/common.hpp"
 #include <avr/eeprom.h>
 
+// Hardware used:
+//  LC75421 volume controller
+
 #define RASPBERRY_REAL_POWER_OFF_DELAY 600
 #define RASPBERRY_POWER_OFF_WARNING_DELAY 1
 
@@ -38,6 +41,7 @@ enum ConfigOption {
 	CO_BENIS,
 	CO_PI_CYCLE,
 	CO_LCD_AND_BUTTONS_TEST,
+	CO_FADER,
 
 	CO_NUM_OPTIONS,
 };
@@ -91,7 +95,7 @@ static void reset_display_data(uint8_t *display_data)
 }
 
 struct VolumeControls {
-	uint8_t fader = 15; // 0...15 (-infdB...0dB)
+	uint8_t fader = 11; // 0...15 (-infdB...0dB) (11 = -8dB)
 	uint8_t super_bass = 0; // 0...10
 	int8_t bass = 0; // -7...7
 	int8_t treble = 0; // -7...7
@@ -99,6 +103,7 @@ struct VolumeControls {
 	uint8_t volume_aux = 45;
 	// NOTE: in2=5=CD, in5=0=AUX
 	uint8_t input_switch = 5; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
+	uint8_t fader_back = 0; // 0, 1  (fade back(0) or front(1))
 	uint8_t mute_switch = 0; // 0, 1
 	uint8_t channel_sel = 3; // 0=initial, 1=L, 2=R, 3=both
 	uint8_t output_gain = 3; // 0=0dB, 1=0dB, 2=+6.5dB, 3=+8.5dB
@@ -517,7 +522,7 @@ void send_volume_update()
 		0x00 | ((map_basstreble(vc.bass) & 0x0f) << 0) |
 				((map_basstreble(vc.treble) & 0x0f) << 4),
 		map_volume(volume), // Only weirdly selected values are allowed
-		0x00 | (input_gain & 0x0f) | ((vc.input_switch & 0x03) << 4) | ((vc.output_gain & 0x01) << 6),
+		0x00 | (input_gain & 0x0f) | ((vc.input_switch & 0x03) << 4) | ((vc.fader_back & 0x01) << 6) | ((vc.output_gain & 0x01) << 7),
 		0x00 | ((vc.input_switch & 0x04) >> 2) | ((vc.channel_sel & 0x03) << 1) | ((vc.mute_switch & 0x01) << 3) | ((vc.output_gain & 0x02) << 6),
 		0x00, // 4 test mode bits and 4 dummy bits
 	};
@@ -694,6 +699,27 @@ void handle_encoder_value(int8_t rot)
 			g_temp_display_data_timer = 1;
 		}
 		g_temp_display_data[lcd_i/8] |= 1 << (lcd_i % 8);
+	} else if(g_config_option == CO_FADER){
+		static int8_t a = 0;
+		a += rot;
+		if(a / 4 != 0){
+			a /= 4;
+			int8_t new_value = g_volume_controls.fader + a;
+			if(new_value > 15)
+				new_value = 15;
+			else if(new_value < 0)
+				new_value = 0;
+			g_volume_controls.fader = new_value;
+			send_volume_update();
+			g_saveables_dirty = true;
+			a = 0;
+			g_config_menu_show_timer = CONFIG_MENU_TIMER_RESET_VALUE;
+		}
+		reset_display_data(g_temp_display_data);
+		char buf[10] = {0};
+		snprintf(buf, 10, "FADER %i    ", g_volume_controls.fader);
+		set_all_segments(g_temp_display_data, buf);
+		g_temp_display_data_timer = 1;
 	}
 }
 
@@ -896,6 +922,7 @@ void save_everything()
 	eeprom_write_byte(wa++, g_lcd_byte1);
 	eeprom_write_byte(wa++, g_volume_controls.volume_aux);
 	eeprom_write_byte(wa++, g_manual_power_state);
+	eeprom_write_byte(wa++, g_volume_controls.fader);
 }
 
 void load_everything()
@@ -921,6 +948,7 @@ void load_everything()
 	g_lcd_byte1 = eeprom_read_byte(ra++) & 0x01;
 	g_volume_controls.volume_aux = eeprom_read_byte(ra++);
 	g_manual_power_state = eeprom_read_byte(ra++);
+	g_volume_controls.fader = eeprom_read_byte(ra++);
 }
 
 void save_everything_with_rate_limit(uint32_t rate_limit_ms)
