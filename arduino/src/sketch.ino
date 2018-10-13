@@ -1000,11 +1000,6 @@ void heat_up()
 	_delay_ms(50);
 	int t = read_temperature();
 
-	if(t >= 25 && t <= 80){
-		// Temperature is ok; return silently
-		return;
-	}
-
 	// If temperature is weird, just return
 	if(t < -70 || t > 70){
 		display_synchronous_message("WEIRD T");
@@ -1014,6 +1009,20 @@ void heat_up()
 		display_synchronous_message(buf);
 		_delay_ms(2000);
 		return;
+	}
+
+	if(t >= 15 && t <= 80){
+		// Temperature is ok; return silently
+		return;
+	}
+
+	int heat_time_seconds = (15 - t) * 5;
+
+	if(heat_time_seconds < 0){
+		return;
+	}
+	if(heat_time_seconds >= 300){
+		heat_time_seconds = 300;
 	}
 
 	// This is to avoid heating for a moment so that the engine can be started
@@ -1033,13 +1042,28 @@ void heat_up()
 	digitalWrite(PIN_HEATER, HIGH);
 
 	// Check temperature and heat if necessary
-	for(;;){
+	while(heat_time_seconds > 0){
+		_delay_ms(1000);
+		heat_time_seconds--;
+
 		// If ignition is switched off in automatic power-on state, stop heating
 		if(!g_manual_power_state && !digitalRead(PIN_IGNITION_INPUT)){
 			// Switch off heater
 			digitalWrite(PIN_HEATER, LOW);
 
 			display_synchronous_message("NO IGNIT");
+			_delay_ms(2000);
+			break;
+		}
+
+		// Check buttons
+		memcpy(g_previous_keys, g_current_keys, sizeof g_previous_keys);
+		lcd_receive_frame(g_current_keys);
+		if(lcd_is_key_pressed(g_current_keys, 28)){ // Knob press
+			// Switch off heater
+			digitalWrite(PIN_HEATER, LOW);
+
+			display_synchronous_message("CANCEL");
 			_delay_ms(2000);
 			break;
 		}
@@ -1060,14 +1084,17 @@ void heat_up()
 			break;
 		}
 
-		// Stop at sufficient temperature
+		// Maintain heat at a certain maximum temperature
 		if(t >= 30){
 			// Switch off heater
 			digitalWrite(PIN_HEATER, LOW);
 
-			display_synchronous_message("HEATED");
-			_delay_ms(1000);
-			break;
+			//display_synchronous_message("HEATED");
+			//_delay_ms(1000);
+			//break;
+		} else {
+			// Switch on heater
+			digitalWrite(PIN_HEATER, HIGH);
 		}
 
 		// Make sure raspberru pi is not powered while it isn't at sufficient
@@ -1076,13 +1103,15 @@ void heat_up()
 
 		// Display temperature
 		char buf[9];
-		snprintf(buf, sizeof buf, "HEAT%3iC", t);
+		snprintf(buf, sizeof buf, "%2iC%3i", t, heat_time_seconds);
 		display_synchronous_message(buf);
-		_delay_ms(500);
 	}
 
 	// Switch off heater before exiting
 	digitalWrite(PIN_HEATER, LOW);
+
+	display_synchronous_message("HEATED");
+	_delay_ms(1000);
 }
 
 void power_off()
