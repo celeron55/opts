@@ -1011,12 +1011,12 @@ void heat_up()
 		return;
 	}
 
-	if(t >= 15 && t <= 80){
+	if(t >= 20 && t <= 80){
 		// Temperature is ok; return silently
 		return;
 	}
 
-	int heat_time_seconds = (15 - t) * 5;
+	int heat_time_seconds = (20 - t) * 15;
 
 	if(heat_time_seconds < 0){
 		return;
