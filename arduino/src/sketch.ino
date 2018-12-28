@@ -529,6 +529,20 @@ void send_volume_update()
 	vol_send_data(data);
 }
 
+void restart_raspberry_pi()
+{
+	set_all_segments(g_temp_display_data, "PI OFF");
+	lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
+	digitalWrite(PIN_RASPBERRY_POWER_OFF, HIGH);
+	delay(2000);
+	set_all_segments(g_temp_display_data, "PI ON");
+	lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
+	digitalWrite(PIN_RASPBERRY_POWER_OFF, LOW);
+	delay(2000);
+	snprintf(g_raspberry_display_text, sizeof g_raspberry_display_text,
+			"RASPBERR");
+}
+
 void handle_encoder_value(int8_t rot)
 {
 	if(g_config_menu_show_timer == 0){
@@ -656,16 +670,7 @@ void handle_encoder_value(int8_t rot)
 			a = 0;
 		} else if(a >= 100){
 			a = 0;
-			set_all_segments(g_temp_display_data, "PI OFF");
-			lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
-			digitalWrite(PIN_RASPBERRY_POWER_OFF, HIGH);
-			delay(2000);
-			set_all_segments(g_temp_display_data, "PI ON");
-			lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
-			digitalWrite(PIN_RASPBERRY_POWER_OFF, LOW);
-			delay(2000);
-			snprintf(g_raspberry_display_text, sizeof g_raspberry_display_text,
-					"RASPBERR");
+			restart_raspberry_pi();
 		}
 		reset_display_data(g_temp_display_data);
 		char buf[10] = {0};
@@ -1112,6 +1117,8 @@ void heat_up()
 
 	display_synchronous_message("HEATED");
 	_delay_ms(1000);
+
+	restart_raspberry_pi();
 }
 
 void power_off()
