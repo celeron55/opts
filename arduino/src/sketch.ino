@@ -534,7 +534,7 @@ void restart_raspberry_pi()
 	set_all_segments(g_temp_display_data, "PI OFF");
 	lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
 	digitalWrite(PIN_RASPBERRY_POWER_OFF, HIGH);
-	delay(2000);
+	delay(5000);
 	set_all_segments(g_temp_display_data, "PI ON");
 	lcd_send_display(0x24 | (false ? 0x07 : 0), g_temp_display_data);
 	digitalWrite(PIN_RASPBERRY_POWER_OFF, LOW);
@@ -1021,7 +1021,7 @@ void heat_up()
 		return;
 	}
 
-	int heat_time_seconds = (20 - t) * 15;
+	int heat_time_seconds = (15 - t) * 10;
 
 	if(heat_time_seconds < 0){
 		return;
