@@ -1,11 +1,16 @@
 #include "lcd.h"
 #include "command_accumulator.h"
+#include "util.h"
 #include "../version.h"
 #include "../../common/common.hpp"
 #include <avr/eeprom.h>
+#include "ar1010lib.h"
+#include <Wire.h>
 
 // Hardware used:
-//  LC75421 volume controller
+//  LC75421 volume controller (originally on-board)
+//  LCD/button controller (TOOD: which one?)
+//  AR1010 FM received (added afterwards)
 
 #define RASPBERRY_REAL_POWER_OFF_DELAY 600
 #define RASPBERRY_POWER_OFF_WARNING_DELAY 1
@@ -25,7 +30,13 @@ const int PIN_STANDBY_DISABLE = 5;
 const int PIN_RASPBERRY_POWER_OFF = 2;
 const int PIN_IGNITION_INPUT = A2;
 const int PIN_TEMPERATURE = A3;
-const int PIN_HEATER = A4;
+const int PIN_HEATER = 6;
+// NOTE: AR1010 Vcc goes to 3.3V output
+const int PIN_AR1010_SDA = A4;
+const int PIN_AR1010_SCL = A5;
+
+AR1010 ar1010;
+uint16_t ar1010_f = 0;
 
 bool g_saveables_dirty = false;
 
@@ -101,7 +112,8 @@ struct VolumeControls {
 	int8_t treble = 0; // -7...7
 	uint8_t volume_rpi = 45;
 	uint8_t volume_aux = 45;
-	// NOTE: in2=5=CD, in5=0=AUX
+	uint8_t volume_radio = 45;
+	// NOTE: in2=5=CD, in4=7=RADIO, in5=0=AUX
 	uint8_t input_switch = 5; // valid values: in1=4, in2=5, in3=6, in4=7, in5=0
 	uint8_t fader_back = 0; // 0, 1  (fade back(0) or front(1))
 	uint8_t mute_switch = 0; // 0, 1
@@ -118,6 +130,7 @@ enum ControlMode {
 	CM_POWER_OFF,
 	CM_AUX,
 	CM_RASPBERRY,
+	CM_RADIO,
 } g_control_mode = CM_RASPBERRY;
 
 struct Mode {
@@ -135,6 +148,9 @@ void aux_handle_keys();
 void raspberry_update();
 void raspberry_handle_keys();
 
+void radio_update();
+void radio_handle_keys();
+
 Mode CONTROL_MODES[] = {
 	{
 		"POWER_OFF",
@@ -150,6 +166,11 @@ Mode CONTROL_MODES[] = {
 		"RASPBERRY",
 		raspberry_update,
 		raspberry_handle_keys,
+	},
+	{
+		"RADIO",
+		radio_update,
+		radio_handle_keys,
 	},
 };
 
@@ -263,14 +284,10 @@ void raspberry_handle_keys()
 {
 	// Power button
 	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
-		g_control_mode = CM_POWER_OFF;
+		power_on();
+		g_control_mode = CM_RADIO;
 		g_saveables_dirty = true;
-		power_off();
 		send_volume_update();
-
-		if(digitalRead(PIN_IGNITION_INPUT)){
-			g_manual_power_state = true;
-		}
 
 		Serial.print(F("<MODE:"));
 		Serial.println(CONTROL_MODES[g_control_mode].name);
@@ -291,6 +308,56 @@ void raspberry_handle_keys()
 				Serial.print(F("<KEY_RELEASE:"));
 				Serial.println(i);
 			}
+		}
+	}
+}
+
+void radio_update()
+{
+	reset_display_data(g_display_data);
+	//g_display_data[163 / 8] |= 1 << (163 % 8); // AUX icon
+	char buf[10] = {0};
+	EVERY_N_MILLISECONDS(100){
+		uint16_t old_f = ar1010_f;
+		ar1010_f = ar1010.frequency();
+		if(ar1010_f != old_f)
+			g_saveables_dirty = true;
+	}
+	snprintf(buf, 10, "FM %i    ", ar1010_f);
+	set_segments(g_display_data, 0, buf);
+
+	if(g_volume_controls.input_switch != 7){
+		g_volume_controls.input_switch = 7;
+		send_volume_update();
+	}
+}
+
+void radio_handle_keys()
+{
+	// Power button
+	if(lcd_is_key_pressed(g_current_keys, 22) && !lcd_is_key_pressed(g_previous_keys, 22)){
+		g_control_mode = CM_POWER_OFF;
+		g_saveables_dirty = true;
+		power_off();
+		send_volume_update();
+
+		if(digitalRead(PIN_IGNITION_INPUT)){
+			g_manual_power_state = true;
+		}
+
+		Serial.print(F("<MODE:"));
+		Serial.println(CONTROL_MODES[g_control_mode].name);
+
+		save_everything_with_rate_limit(100);
+	}
+	if(g_config_option != CO_LCD_AND_BUTTONS_TEST){
+		if(lcd_is_key_pressed(g_current_keys, 12) &&
+				!lcd_is_key_pressed(g_previous_keys, 12)){
+			ar1010.seek('u');
+		}
+		if(lcd_is_key_pressed(g_current_keys, 27) &&
+				!lcd_is_key_pressed(g_previous_keys, 27)){
+			ar1010.seek('d');
 		}
 	}
 }
@@ -514,7 +581,9 @@ void send_volume_update()
 
 	const VolumeControls &vc = g_volume_controls;
 
-	uint8_t volume = g_control_mode == CM_AUX ? vc.volume_aux : vc.volume_rpi;
+	uint8_t volume = g_control_mode == CM_AUX ? vc.volume_aux :
+			g_control_mode == CM_RADIO ? vc.volume_radio :
+			vc.volume_rpi;
 
 	uint8_t data[] = {
 		0x00 | ((vc.fader & 0x0f) << 0) | ((vc.super_bass & 0x0f) << 4),
@@ -552,6 +621,12 @@ void handle_encoder_value(int8_t rot)
 				g_volume_controls.volume_aux = 0;
 			else if(g_volume_controls.volume_aux > 80)
 				g_volume_controls.volume_aux = 80;
+		} else if(g_control_mode == CM_RADIO){
+			g_volume_controls.volume_radio += rot;
+			if(g_volume_controls.volume_radio > 250)
+				g_volume_controls.volume_radio = 0;
+			else if(g_volume_controls.volume_radio > 80)
+				g_volume_controls.volume_radio = 80;
 		} else {
 			g_volume_controls.volume_rpi += rot;
 			if(g_volume_controls.volume_rpi > 250)
@@ -564,8 +639,10 @@ void handle_encoder_value(int8_t rot)
 
 		reset_display_data(g_temp_display_data);
 		char buf[10] = {0};
-		snprintf(buf, 10, "VOL %i    ", g_control_mode == CM_AUX ?
-				g_volume_controls.volume_aux : g_volume_controls.volume_rpi);
+		snprintf(buf, 10, "VOL %i    ",
+				g_control_mode == CM_AUX ? g_volume_controls.volume_aux : 
+				g_control_mode == CM_RADIO ? g_volume_controls.volume_radio :
+				g_volume_controls.volume_rpi);
 		set_all_segments(g_temp_display_data, buf);
 		g_temp_display_data_timer = 1000;
 	} else if(g_config_option == CO_BASS){
@@ -928,6 +1005,8 @@ void save_everything()
 	eeprom_write_byte(wa++, g_volume_controls.volume_aux);
 	eeprom_write_byte(wa++, g_manual_power_state);
 	eeprom_write_byte(wa++, g_volume_controls.fader);
+	eeprom_write_byte(wa++, ar1010_f >> 8);
+	eeprom_write_byte(wa++, ar1010_f & 0xff);
 }
 
 void load_everything()
@@ -954,6 +1033,8 @@ void load_everything()
 	g_volume_controls.volume_aux = eeprom_read_byte(ra++);
 	g_manual_power_state = eeprom_read_byte(ra++);
 	g_volume_controls.fader = eeprom_read_byte(ra++);
+	ar1010_f = (eeprom_read_byte(ra++) << 8) | eeprom_read_byte(ra++);
+	ar1010.setFrequency(ar1010_f);
 }
 
 void save_everything_with_rate_limit(uint32_t rate_limit_ms)
@@ -1168,6 +1249,14 @@ void power_on()
 void setup()
 {
 	init_io();
+
+	// AR1010 initialization
+	Wire.begin();
+	ar1010.initialise();
+	ar1010.setHardmute(false);
+	ar1010.setSoftmute(false);
+	ar1010.setVolume(18);
+	delay(1000);
 
 	load_everything();
 
