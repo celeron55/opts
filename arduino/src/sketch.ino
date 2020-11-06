@@ -330,6 +330,11 @@ void radio_update()
 		g_volume_controls.input_switch = 7;
 		send_volume_update();
 	}
+	if(g_raspberry_power_on){
+		g_raspberry_power_on = false;
+		g_raspberry_power_off_warning_delay = 1;
+		g_raspberry_real_power_off_delay = 1;
+	}
 }
 
 void radio_handle_keys()
@@ -1007,6 +1012,7 @@ void save_everything()
 	eeprom_write_byte(wa++, g_volume_controls.fader);
 	eeprom_write_byte(wa++, ar1010_f >> 8);
 	eeprom_write_byte(wa++, ar1010_f & 0xff);
+	eeprom_write_byte(wa++, g_volume_controls.volume_radio);
 }
 
 void load_everything()
@@ -1035,6 +1041,7 @@ void load_everything()
 	g_volume_controls.fader = eeprom_read_byte(ra++);
 	ar1010_f = (eeprom_read_byte(ra++) << 8) | eeprom_read_byte(ra++);
 	ar1010.setFrequency(ar1010_f);
+	g_volume_controls.volume_radio = eeprom_read_byte(ra++);
 }
 
 void save_everything_with_rate_limit(uint32_t rate_limit_ms)
